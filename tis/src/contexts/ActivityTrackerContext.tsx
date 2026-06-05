@@ -35,6 +35,8 @@ interface ActivityTrackerContextType {
   setSelectedFrequency: (opt: string) => void;
   customIntervalInput: string;
   setCustomIntervalInput: (s: string) => void;
+  selectedIncident: string | null;
+  setSelectedIncident: (incident: string | null) => void;
 }
 
 const ActivityTrackerContext = createContext<ActivityTrackerContextType | undefined>(undefined);
@@ -79,6 +81,9 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
   const [captureScreenshots, setCaptureScreenshots] = useState(true);
   const [sessionDbId, setSessionDbId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
+  const selectedIncidentRef = useRef<string | null>(null);
+  useEffect(() => { selectedIncidentRef.current = selectedIncident; }, [selectedIncident]);
 
   const watcherRef = useRef<ActivityWatcher | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -272,7 +277,8 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
             captured_at: snap.timestamp, 
             screenshot_url: screenshotUrl,
             keystrokes: snap.recentKeys,
-            clicks: snap.recentClicks.length
+            clicks: snap.recentClicks.length,
+            ticket_number: selectedIncidentRef.current || null
           }),
         }).catch(() => { });
 
@@ -302,7 +308,7 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
     try {
       const res = await fetch('/api/activity-sessions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sid, user_id: userId, user_name: userName, start_time: new Date().toISOString(), status: 'active' }),
+        body: JSON.stringify({ session_id: sid, user_id: userId, user_name: userName, start_time: new Date().toISOString(), status: 'active', ticket_number: selectedIncidentRef.current || null }),
       });
       if (res.ok) { const d = await res.json(); setSessionDbId(String(d.id)); sessionDbIdRef.current = String(d.id); }
     } catch { /* silent */ }
@@ -393,7 +399,8 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
       startWatcher, stopWatcher, setEntries, setSummary, setError,
       intervalSec, setIntervalSec, captureScreenshots, setCaptureScreenshots,
       selectedFrequency, setSelectedFrequency,
-      customIntervalInput, setCustomIntervalInput
+      customIntervalInput, setCustomIntervalInput,
+      selectedIncident, setSelectedIncident
     }}>
       {children}
     </ActivityTrackerContext.Provider>

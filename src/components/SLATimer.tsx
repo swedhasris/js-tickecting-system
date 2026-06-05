@@ -193,7 +193,7 @@ export function SLATimer({
   }
 
   return (
-    <div className="flex flex-col gap-1.5 p-2 bg-white border border-border rounded-xl shadow-sm hover:shadow-md transition-all group min-w-[160px]">
+    <div className="flex flex-col gap-1.5 p-2 bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-all group min-w-[160px]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
           <div className={cn("w-1.5 h-1.5 rounded-full", getEscalationColor())} />

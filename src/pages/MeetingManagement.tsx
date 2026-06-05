@@ -5,7 +5,11 @@ import {
   UploadCloud, Download, Printer, History, Trash2, Edit3, 
   Eye, Save, X, ChevronRight, AlertCircle, CheckCircle2, 
   RefreshCw, FileSpreadsheet, ChevronDown, Check, ArrowLeft,
-  FileDown, BookOpen
+  FileDown, BookOpen,
+  // ── NEW ICONS (additive) ──
+  Link, Copy, Mic, Bell, MapPin, Wifi, Radio, Film,
+  Timer, Users2, ClipboardCheck, CheckSquare, PlayCircle,
+  UploadIcon, BellRing, BellOff, ChevronUp, LogIn, LogOut, Layers
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -68,6 +72,55 @@ interface AuditLog {
   created_at: string;
 }
 
+// ── NEW INTERFACES (additive) ──────────────────────────────────────────────
+type MeetingMode = "physical" | "virtual" | "hybrid";
+
+interface VirtualMeetingData {
+  mode: MeetingMode;
+  meetingLink: string;
+  roomId: string;
+  password: string;
+}
+
+interface ParticipantLog {
+  name: string;
+  joinTime: string;
+  leaveTime: string;
+}
+
+interface AttendanceData {
+  totalInvited: number;
+  totalJoined: number;
+  participantLogs: ParticipantLog[];
+}
+
+interface RecordingData {
+  fileName: string;
+  fileSize: number;
+  fileUrl: string;
+  uploadedAt: string;
+}
+
+type NotificationKey =
+  | "scheduled"
+  | "reminder"
+  | "started"
+  | "momPending"
+  | "completed";
+
+type NotificationsState = Record<NotificationKey, boolean>;
+
+interface TimelineMilestone {
+  key: string;
+  label: string;
+  timestamp: string;
+  done: boolean;
+  icon: React.ElementType;
+  color: string;
+  glowColor: string;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function MeetingManagement() {
   const { user, profile } = useAuth();
   
@@ -85,7 +138,25 @@ export function MeetingManagement() {
   const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<(Meeting & { versions: Version[]; auditLogs: AuditLog[] }) | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [detailTab, setDetailTab] = useState<"details" | "versions" | "audit">("details");
+  const [detailTab, setDetailTab] = useState<"details" | "versions" | "audit" | "timeline" | "notifications">("details");
+
+  // ── NEW STATE VARIABLES (additive) ────────────────────────────────────────
+  const defaultVirtualData: VirtualMeetingData = { mode: "physical", meetingLink: "", roomId: "", password: "" };
+  const defaultAttendance: AttendanceData = { totalInvited: 0, totalJoined: 0, participantLogs: [] };
+  const defaultNotifications: NotificationsState = { scheduled: true, reminder: true, started: false, momPending: true, completed: false };
+  const defaultRecording: RecordingData = { fileName: "", fileSize: 0, fileUrl: "", uploadedAt: "" };
+
+  const [virtualData, setVirtualData] = useState<VirtualMeetingData>(defaultVirtualData);
+  const [attendanceData, setAttendanceData] = useState<AttendanceData>(defaultAttendance);
+  const [notifications, setNotifications] = useState<NotificationsState>(defaultNotifications);
+  const [recordingData, setRecordingData] = useState<RecordingData>(defaultRecording);
+  const [timelineMarks, setTimelineMarks] = useState<Record<string, string>>({});
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [virtualSectionOpen, setVirtualSectionOpen] = useState(true);
+  const [attendanceSectionOpen, setAttendanceSectionOpen] = useState(true);
+  const [newParticipant, setNewParticipant] = useState({ name: "", joinTime: "", leaveTime: "" });
+  const [recordingUploading, setRecordingUploading] = useState(false);
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Create wizard states
   const [showCreateWizard, setShowCreateWizard] = useState(false);
@@ -189,6 +260,127 @@ export function MeetingManagement() {
       setSelectedMeeting(null);
     }
   }, [selectedMeetingId]);
+
+  // ── NEW: Load/Save virtual meeting data from localStorage ─────────────────
+  const getStorageKey = (meetingId: string, suffix: string) => `aetherops_meeting_${meetingId}_${suffix}`;
+
+  useEffect(() => {
+    if (!selectedMeeting) return;
+    const mid = selectedMeeting.meeting_id;
+    try {
+      const vd = localStorage.getItem(getStorageKey(mid, "virtual"));
+      const ad = localStorage.getItem(getStorageKey(mid, "attendance"));
+      const nd = localStorage.getItem(getStorageKey(mid, "notifications"));
+      const rd = localStorage.getItem(getStorageKey(mid, "recording"));
+      const td = localStorage.getItem(getStorageKey(mid, "timeline"));
+      setVirtualData(vd ? JSON.parse(vd) : defaultVirtualData);
+      setAttendanceData(ad ? JSON.parse(ad) : defaultAttendance);
+      setNotifications(nd ? JSON.parse(nd) : defaultNotifications);
+      setRecordingData(rd ? JSON.parse(rd) : defaultRecording);
+      setTimelineMarks(td ? JSON.parse(td) : { created: selectedMeeting.created_at });
+    } catch { /* ignore parse errors */ }
+  }, [selectedMeeting?.meeting_id]);
+
+  const saveVirtualData = (data: VirtualMeetingData) => {
+    if (!selectedMeeting) return;
+    setVirtualData(data);
+    localStorage.setItem(getStorageKey(selectedMeeting.meeting_id, "virtual"), JSON.stringify(data));
+  };
+
+  const saveAttendanceData = (data: AttendanceData) => {
+    if (!selectedMeeting) return;
+    setAttendanceData(data);
+    localStorage.setItem(getStorageKey(selectedMeeting.meeting_id, "attendance"), JSON.stringify(data));
+  };
+
+  const saveNotifications = (data: NotificationsState) => {
+    if (!selectedMeeting) return;
+    setNotifications(data);
+    localStorage.setItem(getStorageKey(selectedMeeting.meeting_id, "notifications"), JSON.stringify(data));
+  };
+
+  const saveRecordingData = (data: RecordingData) => {
+    if (!selectedMeeting) return;
+    setRecordingData(data);
+    localStorage.setItem(getStorageKey(selectedMeeting.meeting_id, "recording"), JSON.stringify(data));
+  };
+
+  const markTimelineMilestone = (key: string) => {
+    if (!selectedMeeting) return;
+    const updated = { ...timelineMarks, [key]: new Date().toISOString() };
+    setTimelineMarks(updated);
+    localStorage.setItem(getStorageKey(selectedMeeting.meeting_id, "timeline"), JSON.stringify(updated));
+  };
+
+  // ── NEW: Helper Functions ─────────────────────────────────────────────────
+  const generateRoomId = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    return Array.from({ length: 12 }, (_, i) =>
+      i > 0 && i % 4 === 0 ? "-" + chars[Math.floor(Math.random() * chars.length)] : chars[Math.floor(Math.random() * chars.length)]
+    ).join("");
+  };
+
+  const handleCopyLink = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      /* fallback */
+    }
+  };
+
+  const getAttendancePct = () => {
+    if (!attendanceData.totalInvited) return 0;
+    return Math.min(100, Math.round((attendanceData.totalJoined / attendanceData.totalInvited) * 100));
+  };
+
+  const handleAddParticipantLog = () => {
+    if (!newParticipant.name) return;
+    const updated: AttendanceData = {
+      ...attendanceData,
+      participantLogs: [...attendanceData.participantLogs, { ...newParticipant }],
+    };
+    saveAttendanceData(updated);
+    setNewParticipant({ name: "", joinTime: "", leaveTime: "" });
+  };
+
+  const handleRemoveParticipantLog = (idx: number) => {
+    const updated: AttendanceData = {
+      ...attendanceData,
+      participantLogs: attendanceData.participantLogs.filter((_, i) => i !== idx),
+    };
+    saveAttendanceData(updated);
+  };
+
+  const handleRecordingUpload = (file: File) => {
+    setRecordingUploading(true);
+    // Simulate local processing (no backend upload for additive-only feature)
+    setTimeout(() => {
+      const url = URL.createObjectURL(file);
+      const data: RecordingData = {
+        fileName: file.name,
+        fileSize: file.size,
+        fileUrl: url,
+        uploadedAt: new Date().toISOString(),
+      };
+      saveRecordingData(data);
+      setRecordingUploading(false);
+    }, 800);
+  };
+
+  const getMeetingTimeline = (): TimelineMilestone[] => {
+    const m = selectedMeeting;
+    if (!m) return [];
+    return [
+      { key: "created",   label: "Meeting Created",        timestamp: timelineMarks["created"] || m.created_at, done: true,                          icon: FileText,      color: "text-cyan-400",   glowColor: "rgba(6,182,212,0.6)" },
+      { key: "started",   label: "Meeting Started",        timestamp: timelineMarks["started"] || "",           done: !!timelineMarks["started"],    icon: PlayCircle,    color: "text-green-400",  glowColor: "rgba(34,197,94,0.6)" },
+      { key: "joined",    label: "Participants Joined",    timestamp: timelineMarks["joined"] || "",            done: !!timelineMarks["joined"],     icon: Users2,        color: "text-blue-400",   glowColor: "rgba(59,130,246,0.6)" },
+      { key: "momUpload", label: "MOM Uploaded",           timestamp: timelineMarks["momUpload"] || (m.file_path ? m.updated_at : ""), done: !!m.file_path || !!timelineMarks["momUpload"], icon: ClipboardCheck, color: "text-purple-400", glowColor: "rgba(168,85,247,0.6)" },
+      { key: "completed", label: "Meeting Completed",      timestamp: timelineMarks["completed"] || (m.status === "Closed" ? m.updated_at : ""), done: m.status === "Closed" || !!timelineMarks["completed"], icon: CheckSquare, color: "text-emerald-400", glowColor: "rgba(16,185,129,0.6)" },
+    ];
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   // Perform Auto-Save for Drafts
   const performAutoSave = async () => {
@@ -959,11 +1151,11 @@ export function MeetingManagement() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto text-white">
+    <div className="space-y-6 max-w-7xl mx-auto text-foreground">
       {/* Header Panel */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-orbitron font-bold tracking-tight bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-orbitron font-bold tracking-tight text-blue-600 dark:text-blue-400">
             AETHEROPS MEETING CONTROL
           </h1>
           <p className="text-text-dim text-sm mt-1">
@@ -981,7 +1173,7 @@ export function MeetingManagement() {
             setAutoSaveStatus("");
             setShowCreateWizard(true);
           }}
-          className="bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-slate-950 font-bold border border-cyan-400/20 shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_25px_rgba(6,182,212,0.4)] transition-all cursor-pointer self-start md:self-center"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold border border-blue-500/20 shadow-[0_0_15px_rgba(37,99,235,0.25)] hover:shadow-[0_0_25px_rgba(37,99,235,0.4)] transition-all cursor-pointer self-start md:self-center"
         >
           <Plus className="w-4 h-4 mr-2" /> New Meeting MOM
         </Button>
@@ -990,7 +1182,7 @@ export function MeetingManagement() {
       {/* Statistics Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Total Meetings", value: stats.total, color: "from-blue-500/10 to-indigo-500/5", border: "border-blue-500/20", icon: FileText, iconColor: "text-blue-400" },
+          { label: "Total Meetings", value: stats.total, color: "from-blue-500/10 to-indigo-500/5", border: "border-blue-500/20", icon: FileText, iconColor: "text-blue-500 dark:text-blue-400" },
           { label: "Draft Stage", value: stats.draft, color: "from-yellow-500/10 to-amber-500/5", border: "border-yellow-500/20", icon: History, iconColor: "text-yellow-400" },
           { label: "Awaiting Review", value: stats.submitted, color: "from-cyan-500/10 to-sky-500/5", border: "border-cyan-500/20", icon: Clock, iconColor: "text-cyan-400" },
           { label: "Approved MOMs", value: stats.approved, color: "from-green-500/10 to-emerald-500/5", border: "border-green-500/20", icon: CheckCircle2, iconColor: "text-green-400" },
@@ -1245,7 +1437,7 @@ export function MeetingManagement() {
                   {selectedMeeting.status === "Draft" && (
                     <Button
                       onClick={() => handleUpdateStatus(selectedMeeting, "Submitted")}
-                      className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-slate-950 font-bold border border-blue-400/20 text-xs py-1.5"
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold border border-blue-500/20 text-xs py-1.5"
                     >
                       Submit MOM
                     </Button>
@@ -1295,17 +1487,19 @@ export function MeetingManagement() {
             )}
 
             {/* Tabs Selector */}
-            <div className="flex border-b border-white/10 bg-black/20 shrink-0">
+            <div className="flex border-b border-white/10 bg-black/20 shrink-0 overflow-x-auto">
               {[
-                { id: "details", label: "MOM Details", icon: FileText },
-                { id: "versions", label: `Version History (${selectedMeeting?.versions?.length || 0})`, icon: History },
-                { id: "audit", label: "Audit Logs", icon: BookOpen },
+                { id: "details",       label: "MOM Details",                                          icon: FileText },
+                { id: "versions",      label: `Version History (${selectedMeeting?.versions?.length || 0})`, icon: History },
+                { id: "audit",         label: "Audit Logs",                                           icon: BookOpen },
+                { id: "timeline",      label: "Timeline",                                             icon: Layers },
+                { id: "notifications", label: "Notifications",                                        icon: Bell },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setDetailTab(tab.id as any)}
                   className={cn(
-                    "flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 cursor-pointer transition-all",
+                    "flex-shrink-0 flex-1 min-w-[90px] py-3 text-xs font-semibold flex items-center justify-center gap-2 border-b-2 cursor-pointer transition-all",
                     detailTab === tab.id
                       ? "border-cyan-400 text-cyan-400 bg-white/5"
                       : "border-transparent text-text-dim hover:text-white"
@@ -1462,6 +1656,285 @@ export function MeetingManagement() {
                           </div>
                         </div>
                       )}
+
+                      <div className="rounded-2xl border border-white/8 overflow-hidden">
+                        {/* Section Header */}
+                        <button
+                          onClick={() => setVirtualSectionOpen(v => !v)}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-blue-500/5 hover:bg-blue-500/10 transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                              <Video className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                            </div>
+                            <span className="text-xs font-bold font-orbitron uppercase tracking-wider text-blue-500 dark:text-blue-400">Virtual Meeting Details</span>
+                          </div>
+                          {virtualSectionOpen ? <ChevronUp className="w-4 h-4 text-text-dim" /> : <ChevronDown className="w-4 h-4 text-text-dim" />}
+                        </button>
+
+                        {virtualSectionOpen && (
+                          <div className="p-4 space-y-4 bg-black/20">
+                            {/* Meeting Mode */}
+                            <div className="space-y-2">
+                              <label className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Meeting Mode</label>
+                              <div className="flex gap-2">
+                                {([
+                                  { id: "physical", label: "Physical",  icon: MapPin },
+                                  { id: "virtual",  label: "Virtual",   icon: Wifi },
+                                  { id: "hybrid",   label: "Hybrid",    icon: Radio },
+                                ] as { id: MeetingMode; label: string; icon: React.ElementType }[]).map(({ id, label, icon: Icon }) => (
+                                  <button
+                                    key={id}
+                                    onClick={() => saveVirtualData({ ...virtualData, mode: id })}
+                                    className={cn(
+                                      "flex-1 flex flex-col items-center gap-1.5 py-2.5 px-2 rounded-xl border text-[10px] font-bold cursor-pointer transition-all",
+                                      virtualData.mode === id
+                                        ? id === "physical"
+                                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                                          : id === "virtual"
+                                          ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+                                          : "bg-purple-500/15 border-purple-500/40 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.2)]"
+                                        : "bg-white/3 border-white/8 text-text-dim hover:border-white/20"
+                                    )}
+                                  >
+                                    <Icon className="w-4 h-4" />
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Virtual / Hybrid fields */}
+                            {(virtualData.mode === "virtual" || virtualData.mode === "hybrid") && (
+                              <div className="space-y-3">
+                                {/* Meeting Link */}
+                                <div className="space-y-1.5">
+                                  <label className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Meeting Link URL</label>
+                                  <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                      <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-white/30" />
+                                      <input
+                                        type="url"
+                                        placeholder="https://meet.example.com/room"
+                                        value={virtualData.meetingLink}
+                                        onChange={e => saveVirtualData({ ...virtualData, meetingLink: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl py-2 pl-8 pr-3 text-xs outline-none focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-400 transition-all placeholder:text-white/20 text-white"
+                                      />
+                                    </div>
+                                    <Button
+                                      onClick={() => handleCopyLink(virtualData.meetingLink)}
+                                      disabled={!virtualData.meetingLink}
+                                      className={cn(
+                                        "shrink-0 text-xs px-3 py-1.5 border font-bold cursor-pointer transition-all",
+                                        copiedLink
+                                          ? "bg-green-500/15 border-green-500/30 text-green-400"
+                                          : "bg-white/5 hover:bg-white/10 border-white/10 text-white"
+                                      )}
+                                    >
+                                      {copiedLink ? <><Check className="w-3 h-3 mr-1" />Copied!</> : <><Copy className="w-3 h-3 mr-1" />Copy</>}
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {/* Room ID */}
+                                <div className="space-y-1.5">
+                                  <label className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Meeting Room ID</label>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Auto-generated Room ID"
+                                      value={virtualData.roomId}
+                                      onChange={e => saveVirtualData({ ...virtualData, roomId: e.target.value })}
+                                      className="flex-1 bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-400 transition-all placeholder:text-white/20 text-white font-mono"
+                                    />
+                                    <Button
+                                      onClick={() => saveVirtualData({ ...virtualData, roomId: generateRoomId() })}
+                                      className="shrink-0 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 text-xs px-3 py-1.5 font-bold cursor-pointer"
+                                    >
+                                      <RefreshCw className="w-3 h-3 mr-1" />Generate
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {/* Password */}
+                                <div className="space-y-1.5">
+                                  <label className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Meeting Password <span className="text-white/30 font-normal normal-case tracking-normal">(Optional)</span></label>
+                                  <input
+                                    type="text"
+                                    placeholder="Enter room password"
+                                    value={virtualData.password}
+                                    onChange={e => saveVirtualData({ ...virtualData, password: e.target.value })}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-400 transition-all placeholder:text-text-dim text-foreground"
+                                  />
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-2 pt-1">
+                                  <Button
+                                    onClick={() => virtualData.meetingLink && window.open(virtualData.meetingLink, "_blank")}
+                                    disabled={!virtualData.meetingLink}
+                                    className="flex-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-500 dark:text-blue-400 font-bold text-xs py-2 cursor-pointer shadow-[0_0_15px_rgba(37,99,235,0.15)] hover:shadow-[0_0_20px_rgba(37,99,235,0.3)] transition-all"
+                                  >
+                                    <PlayCircle className="w-3.5 h-3.5 mr-1.5" />Join Meeting
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleCopyLink(virtualData.meetingLink)}
+                                    disabled={!virtualData.meetingLink}
+                                    className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-foreground dark:text-white font-bold text-xs py-2 cursor-pointer transition-all"
+                                  >
+                                    <Copy className="w-3.5 h-3.5 mr-1.5" />{copiedLink ? "Copied!" : "Copy Meeting Link"}
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Physical mode note */}
+                            {virtualData.mode === "physical" && (
+                              <div className="flex items-center gap-2 p-3 bg-emerald-500/8 rounded-xl border border-emerald-500/15">
+                                <MapPin className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <p className="text-xs text-emerald-400/80">This is a physical in-person meeting. No virtual link required.</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ── NEW: Attendance Tracking Section ──────────────────────────────── */}
+                      <div className="rounded-2xl border border-white/8 overflow-hidden">
+                        <button
+                          onClick={() => setAttendanceSectionOpen(v => !v)}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-blue-500/5 hover:bg-blue-500/10 transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                              <Users2 className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                            </div>
+                            <span className="text-xs font-bold font-orbitron uppercase tracking-wider text-blue-500 dark:text-blue-400">Attendance Tracking</span>
+                          </div>
+                          {attendanceSectionOpen ? <ChevronUp className="w-4 h-4 text-text-dim" /> : <ChevronDown className="w-4 h-4 text-text-dim" />}
+                        </button>
+
+                        {attendanceSectionOpen && (
+                          <div className="p-4 space-y-4 bg-black/20">
+                            {/* Stats Row */}
+                            <div className="grid grid-cols-3 gap-3">
+                              {[
+                                { label: "Invited",    value: attendanceData.totalInvited, color: "text-blue-500 dark:text-blue-400",   bg: "bg-blue-500/10",    border: "border-blue-500/20" },
+                                { label: "Joined",     value: attendanceData.totalJoined,  color: "text-green-500 dark:text-green-400",  bg: "bg-green-500/10",   border: "border-green-500/20" },
+                                { label: "Attendance", value: `${getAttendancePct()}%`,    color: "text-blue-500 dark:text-blue-400",   bg: "bg-blue-500/10",    border: "border-blue-500/20" },
+                              ].map(stat => (
+                                <div key={stat.label} className={cn("rounded-xl p-3 border flex flex-col items-center justify-center", stat.bg, stat.border)}>
+                                  <span className={cn("text-xl font-orbitron font-bold", stat.color)}>{stat.value}</span>
+                                  <span className="text-[9px] uppercase font-bold tracking-wider text-text-dim mt-0.5">{stat.label}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Attendance Bar */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[9px] text-text-dim">
+                                <span>Attendance Rate</span>
+                                <span className="font-bold text-blue-500 dark:text-blue-400">{getAttendancePct()}%</span>
+                              </div>
+                              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                                  style={{ width: `${getAttendancePct()}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Invited / Joined Inputs */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <label className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Total Invited</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={attendanceData.totalInvited}
+                                  onChange={e => saveAttendanceData({ ...attendanceData, totalInvited: Math.max(0, parseInt(e.target.value) || 0) })}
+                                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-white"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Total Joined</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={attendanceData.totalJoined}
+                                  onChange={e => saveAttendanceData({ ...attendanceData, totalJoined: Math.max(0, parseInt(e.target.value) || 0) })}
+                                  className="w-full bg-black/40 border border-white/10 rounded-xl py-2 px-3 text-xs outline-none focus:ring-1 focus:ring-green-500/30 focus:border-green-400 transition-all text-white"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Participant Activity Log */}
+                            <div className="space-y-2">
+                              <h5 className="text-[9px] uppercase font-bold tracking-widest text-text-dim">Participant Activity Log</h5>
+
+                              {/* Add Entry Row */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Name"
+                                  value={newParticipant.name}
+                                  onChange={e => setNewParticipant(p => ({ ...p, name: e.target.value }))}
+                                  className="bg-black/40 border border-white/10 rounded-xl py-1.5 px-2 text-xs outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-white placeholder:text-white/20"
+                                />
+                                <input
+                                  type="time"
+                                  placeholder="Join Time"
+                                  value={newParticipant.joinTime}
+                                  onChange={e => setNewParticipant(p => ({ ...p, joinTime: e.target.value }))}
+                                  className="bg-black/40 border border-white/10 rounded-xl py-1.5 px-2 text-xs outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-white"
+                                />
+                                <input
+                                  type="time"
+                                  placeholder="Leave Time"
+                                  value={newParticipant.leaveTime}
+                                  onChange={e => setNewParticipant(p => ({ ...p, leaveTime: e.target.value }))}
+                                  className="bg-black/40 border border-white/10 rounded-xl py-1.5 px-2 text-xs outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-400 transition-all text-white"
+                                />
+                              </div>
+                              <Button
+                                onClick={handleAddParticipantLog}
+                                disabled={!newParticipant.name}
+                                className="w-full bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-xs font-bold py-1.5 cursor-pointer transition-all"
+                              >
+                                <LogIn className="w-3 h-3 mr-1.5" />Add Participant
+                              </Button>
+
+                              {attendanceData.participantLogs.length > 0 ? (
+                                <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+                                  <div className="grid grid-cols-4 gap-2 text-[9px] uppercase font-bold tracking-wider text-text-dim px-2">
+                                    <span className="col-span-2">Participant</span>
+                                    <span>Join Time</span>
+                                    <span>Leave Time</span>
+                                  </div>
+                                  {attendanceData.participantLogs.map((log, idx) => (
+                                    <div key={idx} className="grid grid-cols-4 gap-2 items-center bg-white/3 rounded-lg px-2 py-1.5 border border-white/5 group">
+                                      <span className="col-span-2 text-xs text-white font-semibold truncate flex items-center gap-1">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                                        {log.name}
+                                      </span>
+                                      <span className="text-[10px] text-cyan-400 font-mono">{log.joinTime || "—"}</span>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[10px] text-purple-400 font-mono flex-1">{log.leaveTime || "—"}</span>
+                                        <button onClick={() => handleRemoveParticipantLog(idx)} className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 transition-all cursor-pointer">
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-text-dim/50 text-center py-3">No participant logs recorded yet.</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {/* ──────────────────────────────────────────────────────────────────── */}
                     </div>
                   )}
 
@@ -1530,6 +2003,249 @@ export function MeetingManagement() {
                       )}
                     </div>
                   )}
+
+                  {/* ── NEW: Meeting Timeline Tab ──────────────────────────────────────── */}
+                  {detailTab === "timeline" && (
+                    <div className="space-y-6">
+                      {/* Timeline */}
+                      <div>
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-dim mb-4 flex items-center gap-2">
+                          <Layers className="w-3.5 h-3.5 text-cyan-400" />Meeting Timeline
+                        </h3>
+                        <div className="relative border-l-2 border-white/8 pl-6 ml-3 space-y-5">
+                          {getMeetingTimeline().map((milestone, idx) => {
+                            const Icon = milestone.icon;
+                            return (
+                              <div key={milestone.key} className="relative">
+                                {/* Connector dot */}
+                                <div
+                                  className={cn(
+                                    "absolute -left-[31px] top-2.5 w-4 h-4 rounded-full border-2 border-sn-dark flex items-center justify-center transition-all",
+                                    milestone.done
+                                      ? "bg-current"
+                                      : "bg-white/5"
+                                  )}
+                                  style={milestone.done ? { color: milestone.glowColor.replace("rgba", "").replace(")", "").replace("(", "").split(",").slice(0, 3).join(","), boxShadow: `0 0 10px ${milestone.glowColor}`, background: milestone.glowColor } : {}}
+                                />
+
+                                <div className={cn(
+                                  "glass-panel p-3.5 rounded-xl border space-y-2 transition-all",
+                                  milestone.done ? "border-white/10" : "border-white/5 opacity-60"
+                                )}>
+                                  <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <Icon className={cn("w-4 h-4", milestone.done ? milestone.color : "text-text-dim")} />
+                                      <span className={cn("text-xs font-bold", milestone.done ? "text-white" : "text-text-dim")}>
+                                        {milestone.label}
+                                      </span>
+                                      {milestone.done && (
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">DONE</span>
+                                      )}
+                                    </div>
+                                    {milestone.timestamp ? (
+                                      <span className="text-[10px] text-text-dim/70 font-mono">
+                                        {new Date(milestone.timestamp).toLocaleString()}
+                                      </span>
+                                    ) : (
+                                      !milestone.done && (
+                                        <Button
+                                          onClick={() => markTimelineMilestone(milestone.key)}
+                                          className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-[10px] px-2 py-1 font-bold cursor-pointer transition-all"
+                                        >
+                                          <Timer className="w-3 h-3 mr-1" />Mark Now
+                                        </Button>
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Recording Management */}
+                      <div className="space-y-3">
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-dim flex items-center gap-2">
+                          <Film className="w-3.5 h-3.5 text-purple-400" />Recording Management
+                        </h3>
+
+                        {recordingData.fileName ? (
+                          <div className="glass-panel p-4 rounded-xl border border-purple-500/20 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center text-purple-400 shrink-0">
+                                <Film className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{recordingData.fileName}</p>
+                                <p className="text-[10px] text-text-dim mt-0.5">
+                                  {(recordingData.fileSize / (1024 * 1024)).toFixed(2)} MB
+                                  {recordingData.uploadedAt && ` · Uploaded ${new Date(recordingData.uploadedAt).toLocaleDateString()}`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <a
+                                href={recordingData.fileUrl}
+                                download={recordingData.fileName}
+                                className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />Download Recording
+                              </a>
+                              <Button
+                                onClick={() => saveRecordingData(defaultRecording)}
+                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs py-1.5 px-3 font-bold cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border border-dashed border-white/15 rounded-xl p-6 relative group hover:border-purple-500/40 transition-all bg-black/20">
+                            <input
+                              type="file"
+                              accept="video/*,audio/*"
+                              onChange={e => { if (e.target.files?.[0]) handleRecordingUpload(e.target.files[0]); }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                            {recordingUploading ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <RefreshCw className="w-7 h-7 text-purple-400 animate-spin" />
+                                <span className="text-xs text-text-dim">Processing recording...</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-2 text-center">
+                                <Film className="w-7 h-7 text-white/20 group-hover:text-purple-400 transition-colors" />
+                                <div>
+                                  <span className="text-xs font-semibold block">Upload Meeting Recording</span>
+                                  <span className="text-[10px] text-text-dim block mt-0.5">MP4, WebM, MOV, AVI supported</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* ── ──────────────────────────────────────────────────────────────── */}
+
+                  {/* ── NEW: Meeting Notifications Tab ────────────────────────────────── */}
+                  {detailTab === "notifications" && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Bell className="w-4 h-4 text-cyan-400" />
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-dim">Meeting Notifications</h3>
+                      </div>
+
+                      <p className="text-[10px] text-text-dim/70 bg-white/3 rounded-xl px-3 py-2 border border-white/5">
+                        Configure which notification events are active for this meeting. Toggle to enable or disable each type.
+                      </p>
+
+                      <div className="space-y-2">
+                        {([
+                          {
+                            key: "scheduled" as NotificationKey,
+                            label: "Meeting Scheduled",
+                            description: "Notify participants when the meeting is created and scheduled.",
+                            icon: BellRing,
+                            color: "cyan",
+                          },
+                          {
+                            key: "reminder" as NotificationKey,
+                            label: "Meeting Reminder",
+                            description: "Send a reminder 30 minutes before the meeting starts.",
+                            icon: Timer,
+                            color: "yellow",
+                          },
+                          {
+                            key: "started" as NotificationKey,
+                            label: "Meeting Started",
+                            description: "Alert all participants when the meeting begins.",
+                            icon: PlayCircle,
+                            color: "green",
+                          },
+                          {
+                            key: "momPending" as NotificationKey,
+                            label: "MOM Pending",
+                            description: "Remind the host when MOM is yet to be uploaded after meeting ends.",
+                            icon: ClipboardCheck,
+                            color: "orange",
+                          },
+                          {
+                            key: "completed" as NotificationKey,
+                            label: "Meeting Completed",
+                            description: "Notify all participants when the meeting is closed.",
+                            icon: CheckSquare,
+                            color: "purple",
+                          },
+                        ]).map(({ key, label, description, icon: Icon, color }) => {
+                          const isOn = notifications[key];
+                          const colorMap: Record<string, { bg: string; border: string; text: string; dot: string }> = {
+                            cyan:   { bg: "bg-cyan-500/10",   border: "border-cyan-500/25",   text: "text-cyan-400",   dot: "bg-cyan-400"   },
+                            yellow: { bg: "bg-yellow-500/10", border: "border-yellow-500/25", text: "text-yellow-400", dot: "bg-yellow-400" },
+                            green:  { bg: "bg-green-500/10",  border: "border-green-500/25",  text: "text-green-400",  dot: "bg-green-400"  },
+                            orange: { bg: "bg-orange-500/10", border: "border-orange-500/25", text: "text-orange-400", dot: "bg-orange-400" },
+                            purple: { bg: "bg-purple-500/10", border: "border-purple-500/25", text: "text-purple-400", dot: "bg-purple-400" },
+                          };
+                          const c = colorMap[color];
+                          return (
+                            <div
+                              key={key}
+                              className={cn(
+                                "flex items-center gap-3 p-3.5 rounded-xl border transition-all",
+                                isOn ? cn(c.bg, c.border) : "bg-white/3 border-white/8 opacity-60"
+                              )}
+                            >
+                              <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", isOn ? c.bg : "bg-white/5")}>
+                                <Icon className={cn("w-4 h-4", isOn ? c.text : "text-text-dim")} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className={cn("text-xs font-bold", isOn ? "text-white" : "text-text-dim")}>{label}</span>
+                                  <div className={cn("w-1.5 h-1.5 rounded-full", isOn ? cn(c.dot, "shadow-sm") : "bg-white/20")} />
+                                  <span className={cn("text-[9px] font-bold", isOn ? c.text : "text-text-dim/50")}>{isOn ? "ACTIVE" : "OFF"}</span>
+                                </div>
+                                <p className="text-[10px] text-text-dim/70 mt-0.5 leading-relaxed">{description}</p>
+                              </div>
+                              <button
+                                onClick={() => saveNotifications({ ...notifications, [key]: !isOn })}
+                                className={cn(
+                                  "shrink-0 w-11 h-6 rounded-full border transition-all cursor-pointer relative",
+                                  isOn ? cn(c.bg, c.border) : "bg-white/5 border-white/10"
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    "absolute top-0.5 w-5 h-5 rounded-full transition-all duration-200 shadow-sm",
+                                    isOn ? cn(c.dot, "left-5") : "bg-white/30 left-0.5"
+                                  )}
+                                />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Notification Summary Card */}
+                      <div className="mt-2 p-3 bg-white/3 rounded-xl border border-white/8">
+                        <p className="text-[9px] uppercase font-bold tracking-wider text-text-dim mb-2">Active Notifications Summary</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Object.entries(notifications).filter(([, on]) => on).map(([key]) => {
+                            const labels: Record<string, string> = { scheduled: "Scheduled", reminder: "Reminder", started: "Started", momPending: "MOM Pending", completed: "Completed" };
+                            return (
+                              <span key={key} className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                {labels[key]}
+                              </span>
+                            );
+                          })}
+                          {!Object.values(notifications).some(Boolean) && (
+                            <span className="text-[10px] text-text-dim/50">No notifications enabled.</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* ── ──────────────────────────────────────────────────────────────── */}
                 </>
               )}
             </div>
@@ -1904,7 +2620,7 @@ export function MeetingManagement() {
                     type="button"
                     onClick={() => handleSaveMeeting("Submitted")}
                     disabled={isSubmitting || uploading || (creationMethod === "template" && (countLines(formData.shortDescription) > 9 || countLines(formData.detailedDescription) > 20))}
-                    className="bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-slate-950 px-5 font-bold border border-cyan-400/20 shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer text-xs"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 font-bold border border-blue-500/20 shadow-[0_0_15px_rgba(37,99,235,0.15)] cursor-pointer text-xs"
                   >
                     {isSubmitting ? "Saving..." : "Submit MOM"}
                   </Button>
@@ -2204,7 +2920,7 @@ export function MeetingManagement() {
                   type="button"
                   onClick={() => handleSaveMeeting("Submitted")}
                   disabled={isSubmitting || uploading || (creationMethod === "template" && (countLines(formData.shortDescription) > 9 || countLines(formData.detailedDescription) > 20))}
-                  className="bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-slate-950 px-5 font-bold border border-cyan-400/20 shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer text-xs"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-5 font-bold border border-blue-500/20 shadow-[0_0_15px_rgba(37,99,235,0.15)] cursor-pointer text-xs"
                 >
                   {isSubmitting ? "Saving..." : "Submit Updates"}
                 </Button>

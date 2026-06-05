@@ -5,7 +5,7 @@ import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { ROLE_HIERARCHY, Role } from "../lib/roles";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, Send, History, MessageSquare, Save, Trash2, CheckCircle2, Clock, Plus, Star, Play, Square, Eye, AlertCircle, Lock, Globe, Users, Search, Zap } from "lucide-react";
+import { ChevronLeft, Send, History, MessageSquare, Save, Trash2, CheckCircle2, Clock, Plus, Star, Play, Square, Eye, AlertCircle, Lock, Globe, Users, Search, Zap, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SLATimer } from "../components/SLATimer";
 import { useServiceCatalog } from "../lib/serviceCatalog";
@@ -13,6 +13,8 @@ import { calculateSLADeadline } from "../lib/slaUtils";
 import confetti from "canvas-confetti";
 import { captureScreenshot, analyzeWorkContext, saveWorkSession, type WorkAnalysis } from "../lib/workSessionAI";
 import { ActivityTimeline } from "../components/ActivityTimeline";
+import { SLADelayDialog } from "../components/SLADelayDialog";
+import { createDefaultSlaDelayMeta, getEffectiveSlaDelayState, type SlaDelayLogEntry, type SlaDelayMeta, type SlaDelayResponseType } from "../lib/slaDelayUtils";
 
 export function TicketDetail() {
   const { id } = useParams();
@@ -49,6 +51,20 @@ export function TicketDetail() {
   const [timelineRefresh, setTimelineRefresh] = useState(0);
   const [isPosting, setIsPosting] = useState(false);
   const [postMessage, setPostMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+  const [slaDelaySaving, setSlaDelaySaving] = useState(false);
+  const [slaDelayForm, setSlaDelayForm] = useState({
+    delayReason: "",
+    progressUpdate: "",
+    blockers: "",
+    eta: "",
+    nextActionPlan: "",
+    resolutionPercentage: "",
+    rootCauseAnalysis: "",
+    correctiveActionDetails: "",
+    finalResolutionExplanation: "",
+    dependencyDetails: "",
+    preventiveAction: "",
+  });
 
 
   const visibleCategories = categories.filter((item) => item.status === 'active');
@@ -263,6 +279,15 @@ export function TicketDetail() {
 
       const isResolved = editedTicket.status === "Resolved" || editedTicket.status === "Closed";
       const isPaused = editedTicket.status === "On Hold" || editedTicket.status === "Waiting for Customer" || editedTicket.status === "Awaiting User" || editedTicket.status === "Awaiting Vendor";
+
+      const isSlaBreached = effectiveSlaDelay?.usage.breached || effectiveSlaDelay?.meta.latestStatus === "breached";
+      const hasSubmittedRca = !!(effectiveSlaDelay?.meta.breachReasonSubmittedAt || effectiveSlaDelay?.meta.rootCauseAnalysis?.trim());
+      if (isResolved && isSlaBreached && !hasSubmittedRca) {
+        alert("This ticket has breached its SLA. You must submit a Root Cause Analysis (RCA) before resolving or closing the ticket.");
+        setLocalPendingType("rca");
+        setIsUpdating(false);
+        return;
+      }
 
       if (editedTicket.status !== ticket.status) {
 
@@ -873,6 +898,178 @@ export function TicketDetail() {
   };
 
   const [activeTab, setActiveTab] = useState("Notes");
+  const [localPendingType, setLocalPendingType] = useState<SlaDelayResponseType>(null);
+
+  const effectiveSlaDelay = ticket ? getEffectiveSlaDelayState(ticket) : null;
+  const isTicketOwner = !!(ticket && user && (ticket.assignedTo === user.uid || ticket.assignedTo === user.email || ticket.assignedToName === profile?.name));
+  const pendingSlaDelayType: SlaDelayResponseType = !effectiveSlaDelay || !isTicketOwner
+    ? null
+    : effectiveSlaDelay.awaitingRca
+      ? "rca"
+      : effectiveSlaDelay.followUpDue || effectiveSlaDelay.meta.pendingResponseType === "follow_up"
+        ? "follow_up"
+        : effectiveSlaDelay.awaitingInitialJustification || effectiveSlaDelay.meta.pendingResponseType === "initial"
+          ? "initial"
+          : null;
+
+  const activePendingType = localPendingType || pendingSlaDelayType;
+
+  useEffect(() => {
+    if (!effectiveSlaDelay) return;
+    setSlaDelayForm((prev) => ({
+      delayReason: effectiveSlaDelay.meta.latestDelayReason || prev.delayReason,
+      progressUpdate: effectiveSlaDelay.meta.latestProgressUpdate || prev.progressUpdate,
+      blockers: effectiveSlaDelay.meta.latestBlockers || prev.blockers,
+      eta: effectiveSlaDelay.meta.latestEta || prev.eta,
+      nextActionPlan: effectiveSlaDelay.meta.nextActionPlan || prev.nextActionPlan,
+      resolutionPercentage: effectiveSlaDelay.meta.resolutionPercentage ? String(effectiveSlaDelay.meta.resolutionPercentage) : prev.resolutionPercentage,
+      rootCauseAnalysis: effectiveSlaDelay.meta.rootCauseAnalysis || prev.rootCauseAnalysis,
+      correctiveActionDetails: effectiveSlaDelay.meta.correctiveActionDetails || prev.correctiveActionDetails,
+      finalResolutionExplanation: effectiveSlaDelay.meta.finalResolutionExplanation || prev.finalResolutionExplanation,
+      dependencyDetails: effectiveSlaDelay.meta.dependencyDetails || prev.dependencyDetails,
+      preventiveAction: effectiveSlaDelay.meta.preventiveAction || prev.preventiveAction,
+    }));
+  }, [effectiveSlaDelay?.meta.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateSlaDelayField = (field: string, value: string) => {
+    setSlaDelayForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmitSlaDelay = async () => {
+    if (!ticket || !id || !user || !activePendingType || !effectiveSlaDelay) return;
+
+    const requiredMissing =
+      (activePendingType === "initial" && (!slaDelayForm.delayReason.trim() || !slaDelayForm.progressUpdate.trim() || !slaDelayForm.eta || !slaDelayForm.nextActionPlan.trim())) ||
+      (activePendingType === "follow_up" && (!slaDelayForm.progressUpdate.trim() || !slaDelayForm.eta || slaDelayForm.resolutionPercentage === "")) ||
+      (activePendingType === "rca" && (!slaDelayForm.rootCauseAnalysis.trim() || !slaDelayForm.dependencyDetails.trim() || !slaDelayForm.correctiveActionDetails.trim() || !slaDelayForm.preventiveAction.trim() || !slaDelayForm.finalResolutionExplanation.trim() || !slaDelayForm.eta || slaDelayForm.resolutionPercentage === ""));
+
+    if (requiredMissing) {
+      alert("Please complete all mandatory SLA accountability fields before continuing.");
+      return;
+    }
+
+    setSlaDelaySaving(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const baseMeta: SlaDelayMeta = effectiveSlaDelay.meta.triggeredAt
+        ? effectiveSlaDelay.meta
+        : createDefaultSlaDelayMeta(nowIso, effectiveSlaDelay.usage);
+
+      const responseType = activePendingType;
+      const nextLogs: SlaDelayLogEntry[] = [...effectiveSlaDelay.logs, {
+        id: `submit-${Date.now()}`,
+        type: responseType === "initial" ? "justification_submitted" : responseType === "follow_up" ? "follow_up_submitted" : "rca_submitted",
+        timestamp: nowIso,
+        actorId: user.uid,
+        actorName: profile?.name || user.email || "User",
+        message:
+          responseType === "initial"
+            ? "Delay justification submitted by the ticket owner."
+            : responseType === "follow_up"
+              ? "SLA follow-up progress update submitted by the ticket owner."
+              : "SLA breach RCA and corrective action submitted by the ticket owner.",
+        data: {
+          delayReason: slaDelayForm.delayReason,
+          progressUpdate: slaDelayForm.progressUpdate,
+          blockers: slaDelayForm.blockers,
+          eta: slaDelayForm.eta,
+          nextActionPlan: slaDelayForm.nextActionPlan,
+          resolutionPercentage: Number(slaDelayForm.resolutionPercentage || 0),
+          rootCauseAnalysis: slaDelayForm.rootCauseAnalysis,
+          dependencyDetails: slaDelayForm.dependencyDetails,
+          correctiveActionDetails: slaDelayForm.correctiveActionDetails,
+          preventiveAction: slaDelayForm.preventiveAction,
+          finalResolutionExplanation: slaDelayForm.finalResolutionExplanation,
+        }
+      }];
+
+      const nextMeta: SlaDelayMeta = {
+        ...baseMeta,
+        active: !["Resolved", "Closed", "Canceled"].includes(ticket.status),
+        monitoredSla: effectiveSlaDelay.usage.slaType || baseMeta.monitoredSla,
+        monitoredPercentage: Math.round(effectiveSlaDelay.usage.percentageUsed * 100) / 100,
+        lastSubmittedAt: nowIso,
+        lastRequestedAt: nowIso,
+        awaitingOwnerResponse: false,
+        pendingResponseType: null,
+        nextFollowUpAt: responseType === "rca" ? null : new Date(Date.now() + baseMeta.followUpIntervalMinutes * 60 * 1000).toISOString(),
+        latestDelayReason: slaDelayForm.delayReason.trim() || baseMeta.latestDelayReason,
+        latestProgressUpdate: slaDelayForm.progressUpdate.trim() || baseMeta.latestProgressUpdate,
+        latestBlockers: slaDelayForm.blockers.trim(),
+        latestEta: slaDelayForm.eta,
+        nextActionPlan: slaDelayForm.nextActionPlan.trim() || baseMeta.nextActionPlan,
+        resolutionPercentage: Number(slaDelayForm.resolutionPercentage || baseMeta.resolutionPercentage || 0),
+        rootCauseAnalysis: slaDelayForm.rootCauseAnalysis.trim() || baseMeta.rootCauseAnalysis,
+        correctiveActionDetails: slaDelayForm.correctiveActionDetails.trim() || baseMeta.correctiveActionDetails,
+        finalResolutionExplanation: slaDelayForm.finalResolutionExplanation.trim() || baseMeta.finalResolutionExplanation,
+        dependencyDetails: slaDelayForm.dependencyDetails.trim() || baseMeta.dependencyDetails,
+        preventiveAction: slaDelayForm.preventiveAction.trim() || baseMeta.preventiveAction,
+        ...(responseType === "rca" ? {
+          breachReasonSubmittedBy: profile?.name || user.email || "Unknown",
+          breachReasonSubmittedAt: nowIso,
+        } : {}),
+        rcaRequired: responseType === "rca" ? false : baseMeta.rcaRequired,
+        correctiveActionRequired: responseType === "rca" ? false : baseMeta.correctiveActionRequired,
+        latestStatus: "submitted",
+        updatedAt: nowIso,
+      };
+
+      await updateDoc(doc(db, "tickets", id), {
+        slaDelayMeta: nextMeta,
+        slaDelayLogs: nextLogs,
+        updatedAt: serverTimestamp(),
+        ...(responseType === "rca" ? {
+          resolutionNotes: editedTicket?.resolutionNotes || nextMeta.finalResolutionExplanation,
+        } : {})
+      });
+
+      await fetch(`/api/tickets/${id}/activities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activity_type: responseType === "rca" ? "sla_rca" : "sla_follow_up",
+          visibility_type: "internal",
+          created_by: user.uid,
+          created_by_name: profile?.name || user.email,
+          message:
+            responseType === "initial"
+              ? `Delay justification submitted. ETA updated to ${slaDelayForm.eta}.`
+              : responseType === "follow_up"
+                ? `SLA follow-up submitted. Resolution progress is ${slaDelayForm.resolutionPercentage || 0}%.`
+                : "SLA breach RCA and corrective action submitted.",
+          metadata_json: {
+            responseType,
+            slaDelayMeta: nextMeta,
+          }
+        })
+      });
+
+      // Notify managers when RCA is submitted
+      if (responseType === "rca") {
+        try {
+          fetch("/api/notifications/dispatch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ticket: { id, ticket_number: ticket.number, assigned_to: ticket.assignedTo, assigned_to_name: ticket.assignedToName, status: ticket.status, priority: ticket.priority },
+              actorId: user.uid,
+              actorName: profile?.name || user.email,
+              type: "sla_breach_rca",
+              message: `SLA Breach RCA submitted for ticket ${ticket.number} by ${profile?.name || user.email}.`,
+            })
+          });
+        } catch (e) { /* non-critical */ }
+      }
+
+      setTimelineRefresh((prev) => prev + 1);
+      setLocalPendingType(null);
+    } catch (error: any) {
+      console.error("Failed to submit SLA delay update:", error);
+      alert(`Failed to submit SLA accountability update: ${error.message || "Unknown error"}`);
+    } finally {
+      setSlaDelaySaving(false);
+    }
+  };
 
   if (!ticket) return null;
 
@@ -989,6 +1186,29 @@ export function TicketDetail() {
           </div>
         </div>
       </div>
+
+      {/* SLA Breach RCA Banner */}
+      {(effectiveSlaDelay?.usage.breached || effectiveSlaDelay?.meta.latestStatus === "breached") && !(effectiveSlaDelay?.meta.breachReasonSubmittedAt || effectiveSlaDelay?.meta.rootCauseAnalysis?.trim()) && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between shadow-sm animate-pulse">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-5 h-5 text-red-600" />
+            <div>
+              <p className="text-xs font-bold text-red-800">SLA Breach RCA Required</p>
+              <p className="text-[11px] text-red-600">This ticket has breached its SLA. As the ticket owner, you must submit a Root Cause Analysis before resolving or closing it.</p>
+            </div>
+          </div>
+          {isTicketOwner && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocalPendingType("rca")}
+              className="border-red-200 hover:bg-red-50 text-red-700 font-semibold text-[11px] h-8"
+            >
+              Provide RCA
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Main Form Section */}
       <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
@@ -1478,7 +1698,7 @@ export function TicketDetail() {
                     deadline={ticket.resolutionDeadline} 
                     metAt={ticket.resolvedAt}
                     startTime={ticket.resolutionSlaStartTime}
-                    waitUntil={!ticket.firstResponseAt ? 'handover' : null}
+                    waitUntil={ticket.firstResponseAt || (editedTicket.status !== "New" ? new Date().toISOString() : null)}
                     isPaused={ticket.status === 'On Hold' || ticket.status === 'Awaiting User'}
                     onHoldStart={ticket.onHoldStart}
                     totalPausedTime={ticket.totalPausedTime}
@@ -1548,7 +1768,7 @@ export function TicketDetail() {
                         deadline={ticket.resolutionDeadline} 
                         metAt={ticket.resolvedAt}
                         startTime={ticket.resolutionSlaStartTime}
-                        waitUntil={!ticket.firstResponseAt ? 'handover' : null}
+                        waitUntil={ticket.firstResponseAt || (editedTicket.status !== "New" ? new Date().toISOString() : null)}
                         isPaused={ticket.status === 'On Hold'}
                         onHoldStart={ticket.onHoldStart}
                         totalPausedTime={ticket.totalPausedTime}
@@ -1592,6 +1812,50 @@ export function TicketDetail() {
                   </table>
                 </div>
               </div>
+
+              {effectiveSlaDelay?.meta.breachReasonSubmittedAt && (
+                <div className="mt-6 bg-red-50/50 border border-red-200 rounded-xl p-6 shadow-sm animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2.5 mb-4 border-b border-red-100 pb-3">
+                    <ShieldAlert className="w-5 h-5 text-red-600" />
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">SLA Breach Reason & RCA</h4>
+                      <p className="text-[11px] text-slate-500">
+                        Submitted by <span className="font-semibold">{effectiveSlaDelay.meta.breachReasonSubmittedBy}</span> on {new Date(effectiveSlaDelay.meta.breachReasonSubmittedAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Root Cause Analysis</span>
+                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200/60 min-h-[60px] whitespace-pre-wrap">
+                        {effectiveSlaDelay.meta.rootCauseAnalysis || "N/A"}
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dependencies & Blockers</span>
+                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200/60 min-h-[60px] whitespace-pre-wrap">
+                        {effectiveSlaDelay.meta.dependencyDetails || "N/A"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Corrective Action Taken</span>
+                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200/60 min-h-[60px] whitespace-pre-wrap">
+                        {effectiveSlaDelay.meta.correctiveActionDetails || "N/A"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Preventive Action Plan</span>
+                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200/60 min-h-[60px] whitespace-pre-wrap">
+                        {effectiveSlaDelay.meta.preventiveAction || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : activeTab === "Resolution Information" ? (
             <div className="animate-in fade-in duration-300">
@@ -1797,6 +2061,19 @@ export function TicketDetail() {
           </div>
         </div>
       )}
+
+      <SLADelayDialog
+        open={!!activePendingType}
+        pendingType={activePendingType}
+        saving={slaDelaySaving}
+        monitoredSla={effectiveSlaDelay?.usage.slaType || effectiveSlaDelay?.meta.monitoredSla || null}
+        percentageUsed={effectiveSlaDelay?.usage.percentageUsed || effectiveSlaDelay?.meta.monitoredPercentage || 0}
+        reminderCount={effectiveSlaDelay?.meta.reminderCount || 0}
+        breachDurationLabel={undefined}
+        form={slaDelayForm}
+        onChange={updateSlaDelayField}
+        onSubmit={handleSubmitSlaDelay}
+      />
     </div>
   );
 }

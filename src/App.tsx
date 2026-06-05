@@ -55,6 +55,9 @@ const DataAnalytics = lazy(() => import("./pages/DataAnalytics").then(m => ({ de
 const IncidentCategoryManagement = lazy(() => import("./pages/IncidentCategoryManagement").then(m => ({ default: m.IncidentCategoryManagement })));
 const GlobalSearch = lazy(() => import("./pages/GlobalSearch").then(m => ({ default: m.GlobalSearch })));
 const MeetingManagement = lazy(() => import("./pages/MeetingManagement").then(m => ({ default: m.MeetingManagement })));
+const CreateMeeting = lazy(() => import("./pages/CreateMeeting").then(m => ({ default: m.CreateMeeting })));
+const TSMeetingLobby = lazy(() => import("./pages/TSMeetingLobby").then(m => ({ default: m.TSMeetingLobby })));
+const TSMeetingRoom = lazy(() => import("./pages/TSMeetingRoom").then(m => ({ default: m.TSMeetingRoom })));
 
 function LoadingScreen() {
   return (
@@ -410,6 +413,30 @@ function AppBody() {
                   element={
                     <ProtectedRoute>
                       <MeetingManagement />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/create-meeting"
+                  element={
+                    <ProtectedRoute>
+                      <CreateMeeting />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/ts-meeting/:tsmId/lobby"
+                  element={
+                    <ProtectedRoute>
+                      <TSMeetingLobby />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/ts-meeting/:tsmId/room"
+                  element={
+                    <ProtectedRoute>
+                      <TSMeetingRoom />
                     </ProtectedRoute>
                   }
                 />

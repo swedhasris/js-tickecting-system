@@ -246,7 +246,7 @@ export function Settings() {
                 </Button>
               )}
             </div>
-            <h1 className="text-6xl font-black text-white tracking-tighter">Platform Architect</h1>
+            <h1 className="text-6xl font-black text-foreground tracking-tighter">Platform Architect</h1>
             <p className="text-text-dim font-medium text-lg mx-auto">Centralized command for global service hierarchies and RBAC.</p>
           </div>
 
@@ -263,7 +263,7 @@ export function Settings() {
                 onClick={() => setActiveTab(t.id as any)}
                 className={cn(
                   "flex items-center gap-2.5 px-6 py-3 rounded-[18px] text-sm font-black transition-all duration-500",
-                  activeTab === t.id ? "bg-sn-green text-sn-dark shadow-[0_0_20px_rgba(129,181,50,0.3)]" : "text-text-dim hover:text-white"
+                  activeTab === t.id ? "bg-sn-green text-sn-dark shadow-[0_0_20px_rgba(129,181,50,0.3)]" : "text-text-dim hover:text-foreground"
                 )}
               >
                 <t.icon size={16} /> {t.label}
@@ -764,7 +764,7 @@ function MasterColumn({ title, icon: Icon, items, selectedId, onSelect, onAdd, o
             )}
           >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl border border-border/50 bg-white flex items-center justify-center overflow-hidden shrink-0">
+                <div className="w-10 h-10 rounded-xl border border-border/50 bg-card flex items-center justify-center overflow-hidden shrink-0">
                   {item.image ? (
                     <img src={item.image} className="w-full h-full object-contain" alt="" />
                   ) : (

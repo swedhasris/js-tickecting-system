@@ -288,7 +288,7 @@ export function MyDashboard() {
   if (!data) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(6,182,212,0.3)]" />
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin shadow-[0_0_15px_rgba(37,99,235,0.3)]" />
       </div>
     );
   }
@@ -298,7 +298,7 @@ export function MyDashboard() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-5">
         <div>
-          <h1 className="text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent tracking-tight">
+          <h1 className="text-3xl font-black text-blue-600 dark:text-blue-400 tracking-tight">
             Personal Command Console
           </h1>
           <p className="text-xs text-muted-foreground mt-1">Real-time individual performance telemetries & active task controls.</p>
@@ -391,7 +391,7 @@ export function MyDashboard() {
                   return (
                     <tr key={breach.id} className="hover:bg-rose-500/5 transition-colors">
                       <td className="p-3">
-                        <Link to={`/tickets/${breach.record_id}`} className="font-mono text-xs font-bold text-cyan-400 hover:underline">
+                        <Link to={`/tickets/${breach.record_id}`} className="font-mono text-xs font-bold text-blue-500 dark:text-blue-400 hover:underline">
                           {matchedTicket?.number || "INC—"}
                         </Link>
                       </td>

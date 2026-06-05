@@ -33,6 +33,8 @@ interface ActivityTrackerContextType {
   setCaptureScreenshots: (c: boolean) => void;
   screenshotInterval: number;
   setScreenshotInterval: (s: number) => void;
+  selectedIncident: string | null;
+  setSelectedIncident: (incident: string | null) => void;
 }
 
 const ActivityTrackerContext = createContext<ActivityTrackerContextType | undefined>(undefined);
@@ -63,11 +65,18 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
   const [captureScreenshots, setCaptureScreenshots] = useState(true);
   const [sessionDbId, setSessionDbId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [selectedIncident, setSelectedIncident] = useState<string | null>(null);
+  const selectedIncidentRef = useRef<string | null>(null);
+  useEffect(() => { selectedIncidentRef.current = selectedIncident; }, [selectedIncident]);
 
-  const [screenshotInterval, setScreenshotInterval] = useState(() => {
+  const [screenshotInterval, setScreenshotIntervalState] = useState(() => {
     const saved = localStorage.getItem('screenshotCaptureInterval');
     return saved ? parseInt(saved, 10) : 30;
   });
+  const setScreenshotInterval = (s: number) => {
+    setScreenshotIntervalState(s);
+    localStorage.setItem('screenshotCaptureInterval', s.toString());
+  };
 
   useEffect(() => {
     localStorage.setItem('screenshotCaptureInterval', screenshotInterval.toString());
@@ -267,7 +276,8 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
             captured_at: snap.timestamp, 
             screenshot_url: screenshotUrl,
             keystrokes: snap.recentKeys,
-            clicks: snap.recentClicks.length
+            clicks: snap.recentClicks.length,
+            ticket_number: selectedIncidentRef.current || null
           }),
         }).catch(() => { });
 
@@ -297,7 +307,7 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
     try {
       const res = await fetch('/api/activity-sessions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sid, user_id: userId, user_name: userName, start_time: new Date().toISOString(), status: 'active' }),
+        body: JSON.stringify({ session_id: sid, user_id: userId, user_name: userName, start_time: new Date().toISOString(), status: 'active', ticket_number: selectedIncidentRef.current || null }),
       });
       if (res.ok) { const d = await res.json(); setSessionDbId(String(d.id)); sessionDbIdRef.current = String(d.id); }
     } catch { /* silent */ }
@@ -352,7 +362,8 @@ export function ActivityTrackerProvider({ children }: { children: React.ReactNod
       status, entries, elapsed, summary, error,
       startWatcher, stopWatcher, setEntries, setSummary, setError,
       intervalSec, setIntervalSec, captureScreenshots, setCaptureScreenshots,
-      screenshotInterval, setScreenshotInterval
+      screenshotInterval, setScreenshotInterval,
+      selectedIncident, setSelectedIncident
     }}>
       {children}
     </ActivityTrackerContext.Provider>

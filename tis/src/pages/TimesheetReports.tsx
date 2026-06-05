@@ -145,6 +145,7 @@ export function TimesheetReports() {
                       <th className="p-3 text-left">End</th>
                       <th className="p-3 text-right">Duration</th>
                       <th className="p-3 text-center">Status</th>
+                      <th className="p-3 text-left">Incident</th>
                       <th className="p-3 text-left">Summary</th>
                     </tr>
                   </thead>
@@ -171,6 +172,15 @@ export function TimesheetReports() {
                               ${s.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                               {s.status === 'completed' ? 'Completed' : 'Active'}
                             </span>
+                          </td>
+                          <td className="p-3 text-sm">
+                            {s.ticket_number ? (
+                              <span className="inline-flex items-center font-mono text-xs font-bold text-white bg-blue-600 px-2 py-0.5 rounded-full">
+                                {s.ticket_number}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
                           </td>
                           <td className="p-3 text-sm text-muted-foreground max-w-xs truncate">
                             {s.summary || '—'}

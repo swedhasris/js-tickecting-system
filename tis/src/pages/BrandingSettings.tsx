@@ -16,6 +16,15 @@ export function BrandingSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  React.useEffect(() => {
+    if (!loading && !hasInitialized) {
+      setCompanyName(branding.companyName);
+      setPreviewLogo(branding.logoBase64);
+      setHasInitialized(true);
+    }
+  }, [loading, branding, hasInitialized]);
 
   // Check if user has access (super_admin or ultra_super_admin)
   const hasAccess = profile?.role === "super_admin" || profile?.role === "ultra_super_admin";

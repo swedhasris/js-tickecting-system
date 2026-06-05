@@ -6,10 +6,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Monitor, Square, Loader2, AlertCircle, BarChart2, Clock, Bot,
   RefreshCw, Zap, Eye, EyeOff, Settings, Play, MousePointer,
-  Keyboard, Activity, Maximize2, Download, Camera,
+  Keyboard, Activity, Maximize2, Download, Camera, ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActivityTracker } from '../contexts/ActivityTrackerContext';
+import { useTickets } from '../contexts/TicketsContext';
 import { ActivityWatcher, type ActivitySnapshot, type WatcherStatus } from '../lib/activityCapture';
 
 /* ── Types ── */
@@ -245,16 +246,50 @@ function SummaryCard({ summary, duration, entryCount, onDismiss }: { summary: st
 ═══════════════════════════════════════════════════════════ */
 export function ActivityTracker() {
   const { user, profile } = useAuth();
+  const { tickets: allTickets, loading: ticketsLoading } = useTickets();
   const {
     status, entries, elapsed, summary, error,
     startWatcher, stopWatcher, setEntries, setSummary, setError,
     intervalSec, setIntervalSec, captureScreenshots, setCaptureScreenshots,
-    screenshotInterval, setScreenshotInterval
+    screenshotInterval, setScreenshotInterval,
+    selectedIncident, setSelectedIncident
   } = useActivityTracker();
+
+  const isValUnassigned = (val: any) => {
+    const v = (val || '').trim().toLowerCase();
+    return !v || v === 'unassigned' || v === 'undefined' || v === 'null' || v === 'none';
+  };
+
+  // ── Incident filtering: show all open and unassigned tickets ──
+  const EXCLUDED_STATUSES = ['Closed', 'Resolved', 'Cancelled', 'Canceled', 'Completed'];
+  const myIncidents = allTickets.filter(t => {
+    const isExcluded = EXCLUDED_STATUSES.some(s => (t.status || '').toLowerCase() === s.toLowerCase());
+    return !isExcluded;
+  });
+
+  const getPriorityColor = (priority: string) => {
+    if (!priority) return '#64748b';
+    if (priority.toLowerCase().includes('critical')) return '#dc2626';
+    if (priority.toLowerCase().includes('high')) return '#ea580c';
+    if (priority.toLowerCase().includes('moderate') || priority.toLowerCase().includes('medium')) return '#d97706';
+    return '#2563eb';
+  };
 
   const [showSettings, setShowSettings] = useState(false);
   const [previewModal, setPreviewModal] = useState<string | null>(null);
   const feedEndRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const PRESET_INTERVALS = [5, 10, 15, 30, 60, 120, 300];
   const [dropdownValue, setDropdownValue] = useState<string>(() => {
@@ -307,7 +342,13 @@ export function ActivityTracker() {
     }
   }, [user]);
 
-  const handleStart = startWatcher;
+  const handleStart = async () => {
+    if (!selectedIncident) {
+      alert('Please select an incident before starting monitoring.');
+      return;
+    }
+    await startWatcher();
+  };
 
   const [showSessionPopup, setShowSessionPopup] = useState(false);
   const [sessionForm, setSessionForm] = useState({
@@ -398,6 +439,9 @@ export function ActivityTracker() {
     try {
       const userId = user.uid;
       const finalTask = sessionForm.task === "Other..." ? sessionForm.customTask : sessionForm.task;
+      const finalShortDesc = selectedIncident 
+        ? `[${selectedIncident}] ${sessionForm.shortDescription}`
+        : sessionForm.shortDescription;
 
       const entryD = new Date(sessionForm.entryDate + "T12:00:00");
       const day = entryD.getDay();
@@ -433,7 +477,7 @@ export function ActivityTracker() {
           work_type: sessionForm.workType,
           billable: sessionForm.billable,
           description: sessionForm.description,
-          short_description: sessionForm.shortDescription,
+          short_description: finalShortDesc,
           notes: sessionForm.notes,
           status: 'Draft'
         })
@@ -574,10 +618,19 @@ export function ActivityTracker() {
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               {isActive ? (
-                <div className="flex items-center gap-2 bg-green-50 border border-green-200 px-3 py-2 rounded-lg">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse inline-block" />
-                  <Eye className="w-4 h-4 text-green-600" />
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 px-3 py-2 rounded-lg flex-wrap">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse inline-block flex-shrink-0" />
+                  <Eye className="w-4 h-4 text-green-600 flex-shrink-0" />
                   <span className="text-sm font-semibold text-green-700">Screen monitoring is active</span>
+                  {selectedIncident && (
+                    <>
+                      <span className="text-green-400 text-sm">·</span>
+                      <span className="text-xs font-bold text-slate-600">Incident:</span>
+                      <span className="font-mono text-xs font-bold text-white bg-blue-600 px-2 py-0.5 rounded-full">
+                        {selectedIncident}
+                      </span>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg">
@@ -587,14 +640,106 @@ export function ActivityTracker() {
               )}
               {isActive && <div className="font-mono text-xl font-bold text-green-600 tabular-nums">{fmtHMS(elapsed)}</div>}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {entries.length > 0 && (
                 <div className="text-xs text-muted-foreground hidden sm:block">
                   {entries.filter(e => !e.isProcessing).length} snapshots{topActivity ? ` · ${topActivity[0]}` : ''}
                 </div>
               )}
+
+              {/* ── Incident Selection Dropdown (inline) ── */}
+              {!isActive && (
+                <div ref={dropdownRef} className="relative flex items-center" style={{ minWidth: '240px', maxWidth: '320px' }}>
+                  {(() => {
+                    const selectedInc = myIncidents.find(t => t.number === selectedIncident);
+                    const dotColor = selectedInc ? getPriorityColor(selectedInc.priority || '') : undefined;
+                    return (
+                      <div className="w-full relative">
+                        {/* Dropdown Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => { setIsOpen(!isOpen); }}
+                          disabled={ticketsLoading}
+                          className={`w-full flex items-center justify-between h-[42px] border rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer text-left px-3
+                            ${selectedIncident ? 'border-blue-500 font-semibold text-blue-600 shadow-sm' : 'border-border text-slate-500'}
+                            ${ticketsLoading ? 'opacity-60 cursor-wait' : ''}
+                          `}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            {dotColor && (
+                              <span
+                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                style={{ background: dotColor }}
+                              />
+                            )}
+                            <span className="truncate">
+                              {ticketsLoading ? (
+                                '⏳ Loading incidents...'
+                              ) : selectedInc ? (
+                                `${selectedInc.number} | ${selectedInc.title || 'Untitled'}${isValUnassigned(selectedInc.assignedTo) && isValUnassigned(selectedInc.assignedToName) ? ' (Unassigned)' : ''}`
+                              ) : (
+                                myIncidents.length === 0 ? '— No open incidents found —' : '— Select Incident —'
+                              )}
+                            </span>
+                          </div>
+                          <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0 ml-2" />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {isOpen && (
+                          <div className="absolute z-[9999] left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto py-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedIncident(null);
+                                setIsOpen(false);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 transition-colors font-medium flex items-center"
+                            >
+                              — Select Incident —
+                            </button>
+                            {myIncidents.map(ticket => {
+                              const p = (ticket.priority || '').toLowerCase();
+                              const dot = p.includes('critical') ? '🔴'
+                                : p.includes('high') ? '🟠'
+                                : (p.includes('moderate') || p.includes('medium')) ? '🟡'
+                                : p.includes('low') ? '🟣' : '⚪';
+                              const isUnassigned = isValUnassigned(ticket.assignedTo) && isValUnassigned(ticket.assignedToName);
+                              return (
+                                <button
+                                  key={ticket.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedIncident(ticket.number);
+                                    setIsOpen(false);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 hover:bg-blue-50/50
+                                    ${selectedIncident === ticket.number ? 'bg-blue-50 text-blue-600 font-bold' : 'text-blue-600 font-semibold'}
+                                  `}
+                                  style={{ color: '#2563eb' }}
+                                >
+                                  <span className="flex-shrink-0">{dot}</span>
+                                  <span className="truncate">
+                                    {ticket.number} | {ticket.title || 'Untitled'}{isUnassigned ? ' (Unassigned)' : ''}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {!isActive ? (
-                <button onClick={handleStart} className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-colors shadow-sm">
+                <button
+                  onClick={handleStart}
+                  disabled={!selectedIncident}
+                  className="flex items-center gap-2 bg-green-500 hover:bg-green-600 disabled:bg-green-500 text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!selectedIncident ? 'Please select an incident before starting monitoring.' : 'Start Monitoring'}
+                >
                   <Play className="w-4 h-4 fill-white" /> Start Monitoring
                 </button>
               ) : (
@@ -616,7 +761,15 @@ export function ActivityTracker() {
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
               <Bot className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-blue-700">
-                <strong>Silent OS-level Monitoring.</strong> Click Start to begin. The system captures your full desktop silently at the OS level every {intervalSec} seconds. <strong>No browser permission dialogs or screen-share prompts are required.</strong> Your activity is analyzed by Gemini Vision to generate professional work logs.
+                <strong>Silent OS-level Monitoring.</strong>{' '}
+                {!selectedIncident && myIncidents.length > 0 ? (
+                  <span className="text-red-600 font-semibold">Select an incident from the dropdown, then click </span>
+                ) : (
+                  <>Click </>
+                )}
+                <strong>Start Monitoring</strong> to begin. The system captures your full desktop silently at the OS level every {intervalSec} seconds.{' '}
+                <strong>No browser permission dialogs or screen-share prompts are required.</strong>{' '}
+                Your activity is analyzed by Gemini Vision and linked to the selected incident.
               </p>
             </div>
           )}
@@ -711,7 +864,14 @@ export function ActivityTracker() {
               <div className="px-6 py-4 bg-slate-50 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Bot className="w-5 h-5 text-blue-600" />
-                  <h2 className="text-base font-bold text-slate-800">Save AI Activity Details</h2>
+                  <h2 className="text-base font-bold text-slate-800">
+                    Save AI Activity Details
+                    {selectedIncident && (
+                      <span className="ml-2 text-sm text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        {selectedIncident}
+                      </span>
+                    )}
+                  </h2>
                 </div>
                 <button
                   type="button"

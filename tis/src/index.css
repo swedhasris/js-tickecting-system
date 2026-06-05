@@ -40,70 +40,70 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  /* Connect Inspired Colors */
-  --color-sn-green: #81B532;
-  --color-sn-dark: #0B141A;
-  --color-sn-gray: #F0F3F3;
-  --color-text-dim: #C7D1D6;
-  --color-sn-sidebar: #151B26;
+  /* Connect Inspired Colors - Redesigned to Modern Corporate Blue theme */
+  --color-sn-green: #3b82f6; /* Modern Blue */
+  --color-sn-dark: #020617;  /* Space Navy Dark */
+  --color-sn-gray: #0f172a;  /* Slate Navy */
+  --color-text-dim: #64748b; /* Slate Gray Light */
+  --color-sn-sidebar: #0f172a; /* Translucent Deep Navy */
 }
 
 @layer base {
   :root {
     --light-brightness: 97%;
-    --background: 240 15% var(--light-brightness);
-    --foreground: 240 10% 8%;
+    --background: 220 25% var(--light-brightness);
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 8%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 8%;
-    --primary: 84 56% 45%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221.2 83.2% 53.3%; /* Modern Professional Blue */
     --primary-foreground: 210 40% 98%;
-    --secondary: 240 6% 95%;
-    --secondary-foreground: 240 10% 8%;
-    --muted: 240 6% 95%;
-    --muted-foreground: 240 5% 40%;
-    --accent: 240 6% 95%;
-    --accent-foreground: 240 10% 8%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 12% 40%;
+    --accent: 199 89% 48%; /* Accent Cyan-Blue */
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 240 6% 86%;
-    --input: 240 6% 86%;
-    --ring: 84 56% 45%;
-    --radius: 0.5rem;
+    --border: 220 15% 88%;
+    --input: 220 15% 88%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 100%;
-    --card: 240 6% 10%;
-    --card-foreground: 240 5% 90%;
-    --popover: 240 6% 10%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 84 56% 45%;
-    --primary-foreground: 240 10% 4%;
-    --secondary: 240 5% 14%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 240 5% 14%;
-    --muted-foreground: 240 5% 75%;
-    --accent: 240 5% 14%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 240 5% 18%;
-    --input: 240 5% 18%;
-    --ring: 84 56% 45%;
+    --background: 222.2 84% 4.9%; /* Premium Deep Slate Navy */
+    --foreground: 210 40% 98%; /* High contrast crisp white-slate */
+    --card: 222.2 84% 8.5%; /* Deep Slate Navy Card */
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 8.5%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%; /* Bright Corporate Blue */
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 12%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 12%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 199 89% 48%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 217.2 91.2% 59.8%;
 
     /* Light color overrides inside dark mode to prevent white patches */
-    --color-white: hsl(240 6% 10%);
-    --color-gray-50: hsl(240 6% 6%);
-    --color-gray-100: hsl(240 5% 12%);
-    --color-gray-200: hsl(240 5% 18%);
-    --color-gray-300: hsl(240 5% 24%);
-    --color-slate-50: hsl(240 6% 6%);
-    --color-slate-100: hsl(240 5% 12%);
-    --color-slate-200: hsl(240 5% 18%);
-    --color-slate-300: hsl(240 5% 24%);
+    --color-white: hsl(222.2 84% 8.5%);
+    --color-gray-50: hsl(222.2 84% 4.9%);
+    --color-gray-100: hsl(217.2 32.6% 12%);
+    --color-gray-200: hsl(217.2 32.6% 17.5%);
+    --color-gray-300: hsl(215 20.2% 65.1%);
+    --color-slate-50: hsl(222.2 84% 4.9%);
+    --color-slate-100: hsl(217.2 32.6% 12%);
+    --color-slate-200: hsl(217.2 32.6% 17.5%);
+    --color-slate-300: hsl(215 20.2% 65.1%);
   }
 }
 
@@ -138,16 +138,111 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(37, 99, 235, 0.2);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(37, 99, 235, 0.4);
 }
 
+/* Sidebar Custom Styling - Redesigned to Modern Corporate Blue */
 .bg-sn-sidebar {
-  background: linear-gradient(180deg, #151B26 0%, #0B141A 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(240, 246, 255, 0.9) 100%) !important;
+  backdrop-filter: blur(20px);
+  border-color: rgba(37, 99, 235, 0.15) !important;
+  color: var(--color-foreground) !important;
+}
+
+.dark .bg-sn-sidebar {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(8, 14, 36, 0.9) 100%) !important;
+  backdrop-filter: blur(20px);
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* Sidebar elements overrides for perfect readability and blue theme */
+.bg-sn-sidebar .text-text-dim {
+  color: #2563eb !important; /* Primary blue for standard text labels */
+}
+.dark .bg-sn-sidebar .text-text-dim {
+  color: #93c5fd !important; /* Light slate blue for standard text labels */
+}
+
+/* Sidebar main title and logos */
+.bg-sn-sidebar span.text-blue-600,
+.bg-sn-sidebar span.text-blue-400 {
+  color: #1e40af !important; /* Bold deep blue in Light Mode */
+  font-weight: 850 !important;
+}
+.dark .bg-sn-sidebar span.text-blue-600,
+.dark .bg-sn-sidebar span.text-blue-400 {
+  color: #3b82f6 !important; /* Bright blue in Dark Mode */
+  font-weight: 850 !important;
+}
+
+/* Sidebar Section Headings (Favorites, Incident, Meetings, etc.) */
+.bg-sn-sidebar nav button {
+  color: #1e3a8a !important; /* Deep corporate blue */
+  opacity: 0.9 !important;
+  font-weight: 700 !important;
+}
+.bg-sn-sidebar nav button:hover {
+  color: #1d4ed8 !important;
+  opacity: 1 !important;
+}
+.dark .bg-sn-sidebar nav button {
+  color: #60a5fa !important; /* Light blue */
+  opacity: 0.9 !important;
+  font-weight: 700 !important;
+}
+.dark .bg-sn-sidebar nav button:hover {
+  color: #93c5fd !important;
+  opacity: 1 !important;
+}
+
+/* Active links in Sidebar */
+.bg-sn-sidebar a.text-blue-500,
+.bg-sn-sidebar a.text-blue-400,
+.bg-sn-sidebar a[class*="bg-blue-500/"] {
+  color: #1e3a8a !important; /* Deep Indigo-Blue in Light Mode */
+  background-color: rgba(37, 99, 235, 0.12) !important;
+  border-right: 3px solid #2563eb !important;
+  font-weight: 700 !important;
+}
+.bg-sn-sidebar a.text-blue-500 svg,
+.bg-sn-sidebar a.text-blue-400 svg {
+  color: #2563eb !important;
+}
+.dark .bg-sn-sidebar a.text-blue-500,
+.dark .bg-sn-sidebar a.text-blue-400,
+.dark .bg-sn-sidebar a[class*="bg-blue-500/"] {
+  color: #ffffff !important; /* Crisp high contrast white active state */
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  border-right: 3px solid #3b82f6 !important;
+  font-weight: 700 !important;
+}
+.dark .bg-sn-sidebar a.text-blue-500 svg,
+.dark .bg-sn-sidebar a.text-blue-400 svg {
+  color: #60a5fa !important;
+}
+
+/* Hover links in Sidebar */
+.bg-sn-sidebar a:hover {
+  background-color: rgba(37, 99, 235, 0.08) !important;
+  color: #1d4ed8 !important;
+}
+.dark .bg-sn-sidebar a:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #ffffff !important;
+}
+
+/* SVG icons inside sidebar */
+.bg-sn-sidebar svg {
+  color: #2563eb !important;
+}
+.dark .bg-sn-sidebar svg {
+  color: #93c5fd !important;
 }
 
 
@@ -364,5 +459,191 @@
 
 .codex-pet-think {
   animation: codex-pet-think 2s ease-in-out infinite;
+}
+
+/* --- 3. SINGLE ACCENT BLUE THEME --- */
+
+/* Map all non-blue accents to corporate blue globally */
+.bg-emerald-500, .bg-emerald-600, .bg-green-500, .bg-green-600, 
+[class*="text-cyan-"], [class*="text-green-"], [class*="text-emerald-"],
+[class*="text-purple-"], [class*="text-indigo-"], [class*="text-violet-"],
+[class*="text-pink-"], [class*="text-orange-"], [class*="text-sky-"], .text-sn-green {
+  color: #2563eb !important;
+}
+.dark [class*="text-cyan-"], .dark [class*="text-green-"], .dark [class*="text-emerald-"],
+.dark [class*="text-purple-"], .dark [class*="text-indigo-"], .dark [class*="text-violet-"],
+.dark [class*="text-pink-"], .dark [class*="text-orange-"], .dark [class*="text-sky-"], .dark .text-sn-green {
+  color: #3b82f6 !important;
+}
+
+[class*="bg-cyan-"], [class*="bg-green-"], [class*="bg-emerald-"],
+[class*="bg-purple-"], [class*="bg-indigo-"], [class*="bg-violet-"],
+[class*="bg-pink-"], [class*="bg-orange-"], [class*="bg-sky-"], .bg-sn-green {
+  background-color: #2563eb !important;
+}
+.dark [class*="bg-cyan-"], .dark [class*="bg-green-"], .dark [class*="bg-emerald-"],
+.dark [class*="bg-purple-"], .dark [class*="bg-indigo-"], .dark [class*="bg-violet-"],
+.dark [class*="bg-pink-"], .dark [class*="bg-orange-"], .dark [class*="bg-sky-"], .dark .bg-sn-green {
+  background-color: #3b82f6 !important;
+}
+
+/* For opacities, e.g. bg-cyan-500/10 */
+[class*="bg-cyan-"][class*="/"], [class*="bg-green-"][class*="/"], [class*="bg-emerald-"][class*="/"],
+[class*="bg-purple-"][class*="/"], [class*="bg-indigo-"][class*="/"], [class*="bg-violet-"][class*="/"],
+[class*="bg-pink-"][class*="/"], [class*="bg-orange-"][class*="/"], [class*="bg-sky-"][class*="/"] {
+  background-color: rgba(37, 99, 235, 0.15) !important;
+}
+
+[class*="border-cyan-"], [class*="border-green-"], [class*="border-emerald-"],
+[class*="border-purple-"], [class*="border-indigo-"], [class*="border-violet-"],
+[class*="border-pink-"], [class*="border-orange-"], [class*="border-sky-"], .border-sn-green {
+  border-color: #2563eb !important;
+}
+.dark [class*="border-cyan-"], .dark [class*="border-green-"], .dark [class*="border-emerald-"],
+.dark [class*="border-purple-"], .dark [class*="border-indigo-"], .dark [class*="border-violet-"],
+.dark [class*="border-pink-"], .dark [class*="border-orange-"], .dark [class*="border-sky-"], .dark .border-sn-green {
+  border-color: #3b82f6 !important;
+}
+
+/* Restore readability for light/muted backgrounds (weights 50, 100, 200) */
+[class~="bg-cyan-50"], [class~="bg-cyan-100"], [class~="bg-cyan-200"],
+[class~="bg-green-50"], [class~="bg-green-100"], [class~="bg-green-200"],
+[class~="bg-emerald-50"], [class~="bg-emerald-100"], [class~="bg-emerald-200"],
+[class~="bg-purple-50"], [class~="bg-purple-100"], [class~="bg-purple-200"],
+[class~="bg-indigo-50"], [class~="bg-indigo-100"], [class~="bg-indigo-200"],
+[class~="bg-violet-50"], [class~="bg-violet-100"], [class~="bg-violet-200"],
+[class~="bg-pink-50"], [class~="bg-pink-100"], [class~="bg-pink-200"],
+[class~="bg-orange-50"], [class~="bg-orange-100"], [class~="bg-orange-200"],
+[class~="bg-sky-50"], [class~="bg-sky-100"], [class~="bg-sky-200"],
+[class~="bg-slate-50"], [class~="bg-slate-100"], [class~="bg-slate-200"] {
+  background-color: #eff6ff !important;
+}
+
+.dark [class~="bg-cyan-50"], .dark [class~="bg-cyan-100"], .dark [class~="bg-cyan-200"],
+.dark [class~="bg-green-50"], .dark [class~="bg-green-100"], .dark [class~="bg-green-200"],
+.dark [class~="bg-emerald-50"], .dark [class~="bg-emerald-100"], .dark [class~="bg-emerald-200"],
+.dark [class~="bg-purple-50"], .dark [class~="bg-purple-100"], .dark [class~="bg-purple-200"],
+.dark [class~="bg-indigo-50"], .dark [class~="bg-indigo-100"], .dark [class~="bg-indigo-200"],
+.dark [class~="bg-violet-50"], .dark [class~="bg-violet-100"], .dark [class~="bg-violet-200"],
+.dark [class~="bg-pink-50"], .dark [class~="bg-pink-100"], .dark [class~="bg-pink-200"],
+.dark [class~="bg-orange-50"], .dark [class~="bg-orange-100"], .dark [class~="bg-orange-200"],
+.dark [class~="bg-sky-50"], .dark [class~="bg-sky-100"], .dark [class~="bg-sky-200"],
+.dark [class~="bg-slate-50"], .dark [class~="bg-slate-100"], .dark [class~="bg-slate-200"] {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+
+/* Restore readability for light/muted borders (weights 50, 100, 200) */
+[class~="border-cyan-50"], [class~="border-cyan-100"], [class~="border-cyan-200"],
+[class~="border-green-50"], [class~="border-green-100"], [class~="border-green-200"],
+[class~="border-emerald-50"], [class~="border-emerald-100"], [class~="border-emerald-200"],
+[class~="border-purple-50"], [class~="border-purple-100"], [class~="border-purple-200"],
+[class~="border-indigo-50"], [class~="border-indigo-100"], [class~="border-indigo-200"],
+[class~="border-violet-50"], [class~="border-violet-100"], [class~="border-violet-200"],
+[class~="border-pink-50"], [class~="border-pink-100"], [class~="border-pink-200"],
+[class~="border-orange-50"], [class~="border-orange-100"], [class~="border-orange-200"],
+[class~="border-sky-50"], [class~="border-sky-100"], [class~="border-sky-200"],
+[class~="border-slate-50"], [class~="border-slate-100"], [class~="border-slate-200"] {
+  border-color: #dbeafe !important;
+}
+
+.dark [class~="border-cyan-50"], .dark [class~="border-cyan-100"], .dark [class~="border-cyan-200"],
+.dark [class~="border-green-50"], .dark [class~="border-green-100"], .dark [class~="border-green-200"],
+.dark [class~="border-emerald-50"], .dark [class~="border-emerald-100"], .dark [class~="border-emerald-200"],
+.dark [class~="border-purple-50"], .dark [class~="border-purple-100"], .dark [class~="border-purple-200"],
+.dark [class~="border-indigo-50"], .dark [class~="border-indigo-100"], .dark [class~="border-indigo-200"],
+.dark [class~="border-violet-50"], .dark [class~="border-violet-100"], .dark [class~="border-violet-200"],
+.dark [class~="border-pink-50"], .dark [class~="border-pink-100"], .dark [class~="border-pink-200"],
+.dark [class~="border-orange-50"], .dark [class~="border-orange-100"], .dark [class~="border-orange-200"],
+.dark [class~="border-sky-50"], .dark [class~="border-sky-100"], .dark [class~="border-sky-200"],
+.dark [class~="border-slate-50"], .dark [class~="border-slate-100"], .dark [class~="border-slate-200"] {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Ensure local dark mode containers retain white/light text and dark inputs/cards, even when html is in light mode */
+html:not(.dark) .dark,
+html:not(.dark) .dark * {
+  --color-foreground: #f8fafc !important;
+  --foreground: 210 40% 98% !important;
+  --background: 222.2 84% 4.9% !important;
+  --card: 222.2 84% 8.5% !important;
+  --card-foreground: 210 40% 98% !important;
+  --border: 217.2 32.6% 17.5% !important;
+  --input: 217.2 32.6% 17.5% !important;
+}
+
+html:not(.dark) .dark .glass-panel {
+  background: rgba(11, 19, 41, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37) !important;
+}
+
+/* Ensure local dark containers retain light text styles */
+html:not(.dark) .dark .text-white,
+html:not(.dark) .dark [class*="text-white\\/"],
+html:not(.dark) .dark .text-slate-100,
+html:not(.dark) .dark .text-slate-200,
+html:not(.dark) .dark .text-slate-300,
+html:not(.dark) .dark .text-slate-400 {
+  color: #f8fafc !important;
+}
+
+html:not(.dark) .dark button.bg-blue-600,
+html:not(.dark) .dark button.bg-blue-500 {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+html:not(.dark) .dark button.bg-red-600 {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+html:not(.dark) .dark input, 
+html:not(.dark) .dark select, 
+html:not(.dark) .dark textarea {
+  color: #f8fafc !important;
+  background-color: #0b0f19 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Force inputs, selects, and textareas to use blue styling in both light and dark modes */
+html:not(.dark) input:not(.dark *):not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) select:not(.dark *),
+html:not(.dark) textarea:not(.dark *) {
+  background-color: #eff6ff !important; /* Soft Light Blue */
+  border: 1.5px solid #2563eb !important; /* Blue border */
+  color: #0f172a !important; /* Dark text */
+  border-radius: 0.75rem !important;
+}
+
+html:not(.dark) select:not(.dark *) option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) input:not(.dark *)::placeholder,
+html:not(.dark) textarea:not(.dark *)::placeholder {
+  color: #64748b !important;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: #0b0f19 !important; /* Dark blue/navy */
+  border: 1.5px solid #3b82f6 !important; /* Blue border */
+  color: #f8fafc !important; /* Crisp light text */
+  border-radius: 0.75rem !important;
+}
+
+.dark select option {
+  background-color: #0b0f19 !important;
+  color: #f8fafc !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
 }
 

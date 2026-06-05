@@ -129,6 +129,7 @@ async function getSQLiteDb() {
         stop_time DATETIME,
         duration INTEGER DEFAULT 0,
         status TEXT DEFAULT 'active',
+        ticket_number TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS sla_audit_logs (
@@ -240,6 +241,31 @@ async function getSQLiteDb() {
         value_text TEXT NOT NULL,
         FOREIGN KEY (category_id) REFERENCES incident_categories(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS ticket_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        user TEXT,
+        user_id TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        details TEXT,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_history_ticket ON ticket_history(ticket_id);
+
+      CREATE TABLE IF NOT EXISTS comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER NOT NULL,
+        user_id TEXT,
+        user_name TEXT,
+        user_role TEXT,
+        message TEXT NOT NULL,
+        is_internal INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_comments_ticket ON comments(ticket_id);
       CREATE TABLE IF NOT EXISTS sla_breaches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         record_id TEXT NOT NULL,
@@ -329,6 +355,12 @@ async function getSQLiteDb() {
     } catch (e) { }
     try {
       await sqliteDb.exec("ALTER TABLE tickets ADD COLUMN incident_category TEXT");
+    } catch (e) { }
+    try {
+      await sqliteDb.exec("ALTER TABLE activity_sessions ADD COLUMN ticket_number TEXT");
+    } catch (e) { }
+    try {
+      await sqliteDb.exec("ALTER TABLE activity_entries ADD COLUMN ticket_number TEXT");
     } catch (e) { }
     // Ensure tables have latest columns
     try {
@@ -1017,6 +1049,7 @@ async function startServer() {
           stop_time TIMESTAMP NULL,
           duration INT DEFAULT 0,
           status ENUM('active', 'completed', 'canceled') DEFAULT 'active',
+          ticket_number VARCHAR(64),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           INDEX idx_user_session (user_id, session_id),
           INDEX idx_status (status)
@@ -1038,6 +1071,7 @@ async function startServer() {
           captured_at TIMESTAMP NULL,
           keystrokes INT DEFAULT 0,
           clicks INT DEFAULT 0,
+          ticket_number VARCHAR(64),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           INDEX idx_session (session_id),
           INDEX idx_user (user_id),
@@ -2158,19 +2192,72 @@ async function startServer() {
         }
       }
 
+      // Get valid column names from database
+      let dbColNames: string[] = [];
+      try {
+        if (useSQLite) {
+          const db = await getSQLiteDb();
+          const columns = await db.all("PRAGMA table_info(tickets)");
+          dbColNames = columns.map(c => c.name);
+        } else {
+          const columns = await query("SHOW COLUMNS FROM tickets");
+          dbColNames = columns.map(c => c.Field);
+        }
+      } catch (colErr) {
+        console.error("Failed to fetch ticket columns:", colErr);
+      }
+
+      // Map camelCase keys from req.body to snake_case column names
+      const keyMap: Record<string, string> = {
+        assignedTo: "assigned_to",
+        assignedToName: "assigned_to_name",
+        assignmentGroup: "assignment_group",
+        responseDeadline: "response_deadline",
+        resolutionDeadline: "resolution_deadline",
+        responseSlaStatus: "response_sla_status",
+        resolutionSlaStatus: "resolution_sla_status",
+        responseSlaStartTime: "response_sla_start_time",
+        resolutionSlaStartTime: "resolution_sla_start_time",
+        firstResponseAt: "first_response_at",
+        totalPausedTime: "total_paused_time",
+        onHoldStart: "on_hold_start",
+        incidentCategory: "incident_category",
+        resolvedBy: "resolved_by",
+        resolvedAt: "resolved_at",
+        closedBy: "closed_by",
+        closedAt: "closed_at",
+        companyId: "company_id",
+        affectedUserEmail: "affected_user_email",
+        reportingUserEmail: "reporting_user_email",
+        callerEmail: "caller_email",
+        resolutionCode: "resolution_code",
+        resolutionNotes: "resolution_notes",
+        resolutionMethod: "resolution_method",
+        closureReason: "closure_reason",
+        slaDelayMeta: "sla_delay_meta_json",
+        slaDelayLogs: "sla_delay_logs_json"
+      };
+
       const updateData: any = {
-        ...req.body,
         points: ticket.points + points,
         updated_at: formatDate(new Date())
       };
 
-      if (req.body.incidentCategory !== undefined) {
-        updateData.incident_category = req.body.incidentCategory;
-        delete updateData.incidentCategory;
+      const ignoredKeys = new Set(["id", "updatedById", "updatedBy", "customFields", "history", "points", "updated_at", "createdAt", "updatedAt"]);
+
+      for (const [key, value] of Object.entries(req.body)) {
+        if (ignoredKeys.has(key)) continue;
+        const dbKey = keyMap[key] || key;
+        
+        // Stringify complex objects
+        if ((key === "slaDelayMeta" || key === "slaDelayLogs") && value && typeof value === "object") {
+          updateData[dbKey] = JSON.stringify(value);
+        } else {
+          updateData[dbKey] = value;
+        }
       }
 
       if (!hasUpdateAccess) {
-        delete updateData.incidentCategory;
         delete updateData.incident_category;
       }
 
@@ -2178,8 +2265,14 @@ async function startServer() {
         updateData.resolved_at = formatDate(new Date());
       }
 
-      if (updateData.customFields !== undefined) {
-        delete updateData.customFields;
+      // Filter updateData to only valid columns present in the database table
+      if (dbColNames.length > 0) {
+        const validSet = new Set(dbColNames);
+        for (const key of Object.keys(updateData)) {
+          if (!validSet.has(key)) {
+            delete updateData[key];
+          }
+        }
       }
 
       // Build update query
@@ -3562,9 +3655,13 @@ Respond ONLY with valid JSON.`;
         const db = await getSQLiteDb();
         await db.exec("ALTER TABLE activity_entries ADD COLUMN approval_status TEXT DEFAULT 'Pending'");
         await db.exec("ALTER TABLE activity_entries ADD COLUMN approved_by TEXT");
+        await db.exec("ALTER TABLE activity_sessions ADD COLUMN ticket_number TEXT");
+        await db.exec("ALTER TABLE activity_entries ADD COLUMN ticket_number TEXT");
       } else {
         await execute("ALTER TABLE activity_entries ADD COLUMN approval_status VARCHAR(20) DEFAULT 'Pending'");
         await execute("ALTER TABLE activity_entries ADD COLUMN approved_by VARCHAR(128)");
+        await execute("ALTER TABLE activity_sessions ADD COLUMN ticket_number VARCHAR(64)");
+        await execute("ALTER TABLE activity_entries ADD COLUMN ticket_number VARCHAR(64)");
       }
     } catch (e) {
       // Ignore if columns already exist
@@ -3805,11 +3902,11 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   // â•â•â• ACTIVITY SESSIONS CRUD â•â•â•
   app.post('/api/activity-sessions', async (req: any, res: any) => {
     try {
-      const { session_id, user_id, user_name, start_time, status } = req.body;
+      const { session_id, user_id, user_name, start_time, status, ticket_number } = req.body;
       if (!user_id || !session_id) return res.status(400).json({ error: 'Missing user_id or session_id' });
       const result = await execute(
-        `INSERT INTO activity_sessions (session_id, user_id, user_name, start_time, status) VALUES (?, ?, ?, ?, ?)`,
-        [session_id, user_id, user_name || null, start_time || new Date().toISOString(), status || 'active']
+        `INSERT INTO activity_sessions (session_id, user_id, user_name, start_time, status, ticket_number) VALUES (?, ?, ?, ?, ?, ?)`,
+        [session_id, user_id, user_name || null, start_time || new Date().toISOString(), status || 'active', ticket_number || null]
       );
       const created = await query('SELECT * FROM activity_sessions WHERE id = ?', [result.insertId]);
       res.json({ id: result.insertId.toString(), ...created[0] });
@@ -3854,14 +3951,14 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   app.post('/api/activity-entries', async (req: any, res: any) => {
     try {
       const { session_id, user_id, screenshot_url, screenshot_filename, screenshot_format,
-        screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks } = req.body;
+        screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks, ticket_number } = req.body;
       if (!user_id) return res.status(400).json({ error: 'Missing user_id' });
       const result = await execute(
-        `INSERT INTO activity_entries (session_id, user_id, screenshot_url, screenshot_filename, screenshot_format, screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO activity_entries (session_id, user_id, screenshot_url, screenshot_filename, screenshot_format, screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks, ticket_number)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [session_id || null, user_id, screenshot_url || null, screenshot_filename || null,
         screenshot_format || null, screenshot_size_kb || null, activity_label || null,
-        description || null, confidence || 0, captured_at || null, keystrokes || 0, clicks || 0]
+        description || null, confidence || 0, captured_at || null, keystrokes || 0, clicks || 0, ticket_number || null]
       );
       const created = await query('SELECT * FROM activity_entries WHERE id = ?', [result.insertId]);
       res.json({ id: result.insertId.toString(), ...created[0] });

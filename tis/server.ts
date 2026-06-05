@@ -12,13 +12,14 @@ import multer from "multer";
 import fs from "fs";
 import { OmniChannelEngine } from "./src/lib/omniChannelEngine";
 import { SLAEngine } from "./src/lib/slaEngine";
+import { computeActiveSlaUsage, createDefaultSlaDelayMeta, isTicketClosed, parseSlaDelayLogs, parseSlaDelayMeta, toMillis } from "./src/lib/slaDelayUtils";
 import { uIOhook } from "uiohook-napi";
 import { setUseSQLite } from "./src/lib/db";
 import { NotificationEngine } from "./src/lib/notificationEngine";
 import nodemailer from 'nodemailer';
 import imaps from 'imap-simple';
 import { db as firestoreDb } from "./src/lib/firebase";
-import { doc as fsDoc, getDoc as fsGetDoc, collection as fsCollection, query as fsQuery, where as fsWhere, getDocs as fsGetDocs } from "firebase/firestore";
+import { doc as fsDoc, getDoc as fsGetDoc, collection as fsCollection, query as fsQuery, where as fsWhere, getDocs as fsGetDocs, updateDoc as fsUpdateDoc, addDoc as fsAddDoc } from "firebase/firestore";
 
 
 // SQLite will be imported dynamically when needed
@@ -138,6 +139,7 @@ async function getSQLiteDb() {
         stop_time DATETIME,
         duration INTEGER DEFAULT 0,
         status TEXT DEFAULT 'active',
+        ticket_number TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS sla_audit_logs (
@@ -308,6 +310,31 @@ async function getSQLiteDb() {
         value_text TEXT NOT NULL,
         FOREIGN KEY (category_id) REFERENCES incident_categories(id) ON DELETE CASCADE
       );
+      CREATE TABLE IF NOT EXISTS ticket_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        user TEXT,
+        user_id TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        details TEXT,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_history_ticket ON ticket_history(ticket_id);
+
+      CREATE TABLE IF NOT EXISTS comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER NOT NULL,
+        user_id TEXT,
+        user_name TEXT,
+        user_role TEXT,
+        message TEXT NOT NULL,
+        is_internal INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_comments_ticket ON comments(ticket_id);
     `);
 
     // ═══ Enterprise Email System Tables ═══
@@ -387,6 +414,8 @@ async function getSQLiteDb() {
     try { await sqliteDb.exec("ALTER TABLE tickets ADD COLUMN response_sla_start_time DATETIME"); } catch (e) {}
     try { await sqliteDb.exec("ALTER TABLE tickets ADD COLUMN resolution_sla_start_time DATETIME"); } catch (e) {}
     try { await sqliteDb.exec("ALTER TABLE tickets ADD COLUMN incident_category TEXT"); } catch (e) {}
+    try { await sqliteDb.exec("ALTER TABLE activity_sessions ADD COLUMN ticket_number TEXT;"); } catch (e) {}
+    try { await sqliteDb.exec("ALTER TABLE activity_entries ADD COLUMN ticket_number TEXT;"); } catch (e) {}
     
     console.log('[SQLite] Database initialized with enterprise email tables');
   }
@@ -467,6 +496,649 @@ async function generateTicketNumber(): Promise<string> {
   const prefix = 'INC';
   const random = Math.floor(1000000 + Math.random() * 9000000);
   return `${prefix}${random}`;
+}
+
+const SLA_DELAY_THRESHOLD_PERCENT = 25;
+const SLA_DELAY_FOLLOW_UP_MINUTES = 240;
+const SLA_DELAY_REMINDER_MINUTES = 60;
+
+function getBreachTimeslot(durationMs: number): string {
+  const hours = durationMs / (1000 * 60 * 60);
+  if (hours <= 1) return "0–1 Hour";
+  if (hours <= 2) return "1–2 Hours";
+  if (hours <= 3) return "2–3 Hours";
+  if (hours <= 4) return "3–4 Hours";
+  if (hours <= 6) return "4–6 Hours";
+  if (hours <= 12) return "6–12 Hours";
+  if (hours <= 24) return "12–24 Hours";
+  return "24+ Hours";
+}
+
+function formatBreachDuration(durationMs: number): string {
+  const seconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    return `${days}d ${hours % 24}h`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+  return `${seconds}s`;
+}
+
+async function ensureTicketSlaDelayColumns() {
+  if (useSQLite) {
+    try { await sqliteDb.exec("ALTER TABLE tickets ADD COLUMN sla_delay_meta_json TEXT"); } catch { /* already exists */ }
+    try { await sqliteDb.exec("ALTER TABLE tickets ADD COLUMN sla_delay_logs_json TEXT"); } catch { /* already exists */ }
+    try {
+      await sqliteDb.exec(`
+        CREATE TABLE IF NOT EXISTS sla_breaches (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          record_id TEXT NOT NULL,
+          record_type TEXT NOT NULL,
+          assigned_user TEXT NOT NULL,
+          assigned_user_name TEXT,
+          sla_name TEXT NOT NULL,
+          sla_target TEXT,
+          actual_time_taken TEXT,
+          breach_duration TEXT,
+          breach_timeslot TEXT,
+          breach_timestamp TEXT,
+          status TEXT DEFAULT 'active',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch {}
+    return;
+  }
+
+  // MySQL
+  try { await execute("ALTER TABLE tickets ADD COLUMN sla_delay_meta_json LONGTEXT NULL"); } catch { /* already exists */ }
+  try { await execute("ALTER TABLE tickets ADD COLUMN sla_delay_logs_json LONGTEXT NULL"); } catch { /* already exists */ }
+  try {
+    await execute(`
+      CREATE TABLE IF NOT EXISTS sla_audit_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_id VARCHAR(128) NOT NULL,
+        sla_type VARCHAR(50) NOT NULL,
+        event_type VARCHAR(50) NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT,
+        INDEX idx_ticket_id (ticket_id)
+      ) ENGINE=InnoDB;
+    `);
+  } catch {}
+  try {
+    await execute(`
+      CREATE TABLE IF NOT EXISTS sla_breaches (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        record_id VARCHAR(128) NOT NULL,
+        record_type VARCHAR(50) NOT NULL,
+        assigned_user VARCHAR(128) NOT NULL,
+        assigned_user_name VARCHAR(255),
+        sla_name VARCHAR(100) NOT NULL,
+        sla_target VARCHAR(100),
+        actual_time_taken VARCHAR(100),
+        breach_duration VARCHAR(100),
+        breach_timeslot VARCHAR(100),
+        breach_timestamp VARCHAR(100),
+        status VARCHAR(50) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_record_id (record_id),
+        INDEX idx_assigned_user (assigned_user)
+      ) ENGINE=InnoDB;
+    `);
+  } catch {}
+}
+
+async function recordBreach(breach: {
+  record_id: string;
+  record_type: string;
+  assigned_user: string;
+  assigned_user_name: string;
+  sla_name: string;
+  sla_target: string;
+  actual_time_taken: string;
+  breach_duration: string;
+  breach_timeslot: string;
+  breach_timestamp: string;
+  status?: string;
+}) {
+  try {
+    const status = breach.status || 'active';
+    const existing = await query(
+      "SELECT id FROM sla_breaches WHERE record_id = ? AND sla_name = ?",
+      [breach.record_id, breach.sla_name]
+    );
+
+    if (existing.length === 0) {
+      await execute(`
+        INSERT INTO sla_breaches (record_id, record_type, assigned_user, assigned_user_name, sla_name, sla_target, actual_time_taken, breach_duration, breach_timeslot, breach_timestamp, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [breach.record_id, breach.record_type, breach.assigned_user, breach.assigned_user_name, breach.sla_name, breach.sla_target, breach.actual_time_taken, breach.breach_duration, breach.breach_timeslot, breach.breach_timestamp, status]);
+      console.log(`[SQL Breach Log] Logged new breach for ticket ${breach.record_id} (${breach.sla_name})`);
+    } else {
+      await execute(`
+        UPDATE sla_breaches 
+        SET actual_time_taken = ?, breach_duration = ?, breach_timeslot = ?, status = ?
+        WHERE record_id = ? AND sla_name = ?
+      `, [breach.actual_time_taken, breach.breach_duration, breach.breach_timeslot, status, breach.record_id, breach.sla_name]);
+    }
+
+    if (firestoreDb) {
+      const breachesCollection = fsCollection(firestoreDb, "sla_breaches");
+      const fsQ = fsQuery(
+        breachesCollection,
+        fsWhere("record_id", "==", breach.record_id),
+        fsWhere("sla_name", "==", breach.sla_name)
+      );
+      const snap = await fsGetDocs(fsQ);
+
+      if (snap.empty) {
+        await fsAddDoc(breachesCollection, {
+          record_id: breach.record_id,
+          record_type: breach.record_type,
+          assigned_user: breach.assigned_user,
+          assigned_user_name: breach.assigned_user_name,
+          sla_name: breach.sla_name,
+          sla_target: breach.sla_target,
+          actual_time_taken: breach.actual_time_taken,
+          breach_duration: breach.breach_duration,
+          breach_timeslot: breach.breach_timeslot,
+          breach_timestamp: breach.breach_timestamp,
+          status: status,
+          created_at: new Date().toISOString()
+        });
+        console.log(`[Firestore Breach Log] Logged new breach for ticket ${breach.record_id} (${breach.sla_name})`);
+      } else {
+        const docId = snap.docs[0].id;
+        await fsUpdateDoc(fsDoc(firestoreDb, "sla_breaches", docId), {
+          actual_time_taken: breach.actual_time_taken,
+          breach_duration: breach.breach_duration,
+          breach_timeslot: breach.breach_timeslot,
+          status: status,
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error("[Breach Recorder] Error recording breach:", err.message);
+  }
+}
+
+async function getEscalationRecipients(ticket: any) {
+  const recipients: Array<{ uid: string; name: string; level: "owner" | "manager" | "team_lead" | "service_owner" }> = [];
+
+  if (ticket.assigned_to || ticket.assignedTo) {
+    recipients.push({
+      uid: ticket.assigned_to || ticket.assignedTo,
+      name: ticket.assigned_to_name || ticket.assignedToName || "Assigned Owner",
+      level: "owner",
+    });
+  }
+
+  if (firestoreDb) {
+    try {
+      const groupName = ticket.assignment_group || ticket.assignmentGroup;
+      if (groupName) {
+        const groupsSnapshot = await fsGetDocs(fsQuery(fsCollection(firestoreDb, "settings_groups"), fsWhere("name", "==", groupName)));
+        const group = groupsSnapshot.docs[0]?.data() as any;
+        const groupId = groupsSnapshot.docs[0]?.id;
+
+        if (group?.managerId) {
+          recipients.push({
+            uid: group.managerId,
+            name: group.managerName || "Reporting Manager",
+            level: "manager",
+          });
+        }
+
+        if (groupId) {
+          const membersSnapshot = await fsGetDocs(fsQuery(fsCollection(firestoreDb, "settings_group_members"), fsWhere("groupId", "==", groupId)));
+          const memberDocs = membersSnapshot.docs.map((docSnap) => docSnap.data() as any);
+          const teamLead =
+            memberDocs.find((member) => String(member.roleInGroup || "").toLowerCase() === "lead") ||
+            memberDocs.find((member) => String(member.roleInGroup || "").toLowerCase().includes("team lead")) ||
+            memberDocs.find((member) => String(member.roleInGroup || "").toLowerCase() === "manager");
+
+          if (teamLead?.userId && teamLead.userId !== group?.managerId) {
+            recipients.push({
+              uid: teamLead.userId,
+              name: teamLead.userName || "Team Lead",
+              level: "team_lead",
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("[SLA Delay] Failed to resolve Firestore escalation recipients:", err.message);
+    }
+  }
+
+  try {
+    const allUsers = await query("SELECT uid, name, role FROM users");
+    const serviceOwner =
+      allUsers.find((u) => u.role === "ultra_super_admin") ||
+      allUsers.find((u) => u.role === "super_admin") ||
+      allUsers.find((u) => u.role === "admin");
+    if (serviceOwner?.uid) {
+      recipients.push({
+        uid: serviceOwner.uid,
+        name: serviceOwner.name || "Service Owner",
+        level: "service_owner",
+      });
+    }
+  } catch (err: any) {
+    console.warn("[SLA Delay] Failed to resolve SQL escalation recipients:", err.message);
+  }
+
+  const seen = new Set<string>();
+  return recipients.filter((recipient) => {
+    if (!recipient.uid || seen.has(recipient.uid)) return false;
+    seen.add(recipient.uid);
+    return true;
+  });
+}
+
+async function dispatchNotificationsToRecipients(
+  ticket: any,
+  recipients: Array<{ uid: string; name: string; level?: string }>,
+  actorId: string,
+  actorName: string,
+  message: string
+) {
+  try {
+    for (const recipient of recipients) {
+      if (!recipient.uid) continue;
+      await NotificationEngine.create(
+        recipient.uid,
+        "SLA Alert",
+        message,
+        "sla_alert",
+        ticket.id?.toString() || ticket.ticket_number
+      );
+    }
+  } catch (err: any) {
+    console.error("[Notifications Dispatcher] Direct recipient dispatch error:", err.message);
+  }
+}
+
+async function monitorSlaDelayAccountability() {
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  if (firestoreDb) {
+    try {
+      const snapshot = await fsGetDocs(fsCollection(firestoreDb, "tickets"));
+
+      for (const docSnap of snapshot.docs) {
+        const ticket = { id: docSnap.id, ...docSnap.data() } as any;
+        const effective = computeActiveSlaUsage(ticket, now.getTime());
+        const meta = parseSlaDelayMeta(ticket.slaDelayMeta);
+        const logs = parseSlaDelayLogs(ticket.slaDelayLogs);
+
+        if (isNaN(toMillis(ticket.createdAt)) || isTicketClosed(ticket.status)) {
+          if (meta.active && !meta.latestStatus.startsWith("resolved")) {
+            const resolvedMeta = {
+              ...meta,
+              active: false,
+              awaitingOwnerResponse: false,
+              pendingResponseType: null,
+              latestStatus: "resolved" as const,
+              updatedAt: nowIso,
+            };
+            const nextLogs = logs.concat({
+              id: `resolved-${Date.now()}`,
+              type: "resolved",
+              timestamp: nowIso,
+              actorId: "system",
+              actorName: "SLA Engine",
+              message: "SLA delay accountability cycle closed because the ticket is resolved or closed."
+            });
+            await fsUpdateDoc(fsDoc(firestoreDb, "tickets", docSnap.id), {
+              slaDelayMeta: resolvedMeta,
+              slaDelayLogs: nextLogs,
+              updatedAt: nowIso,
+            });
+            await execute(
+              "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [ticket.id, "sla_resolved", "internal", "system", "SLA Engine", "SLA delay accountability cycle closed.", JSON.stringify({ latestStatus: "resolved" })]
+            );
+          }
+          continue;
+        }
+
+        let nextMeta = { ...meta };
+        let nextLogs = [...logs];
+        let changed = false;
+
+        if (effective.active && effective.percentageUsed >= SLA_DELAY_THRESHOLD_PERCENT && !meta.triggeredAt) {
+          nextMeta = {
+            ...createDefaultSlaDelayMeta(nowIso, effective),
+            followUpIntervalMinutes: SLA_DELAY_FOLLOW_UP_MINUTES,
+          };
+          nextLogs.push({
+            id: `threshold-${Date.now()}`,
+            type: "threshold_reached",
+            timestamp: nowIso,
+            actorId: "system",
+            actorName: "SLA Engine",
+            message: `SLA utilization reached ${Math.round(effective.percentageUsed)}%. Delay justification is now mandatory.`,
+            data: { slaType: effective.slaType, percentageUsed: effective.percentageUsed }
+          });
+          changed = true;
+
+          const recipients = await getEscalationRecipients(ticket);
+          const ownerRecipients = recipients.filter((recipient) => recipient.level === "owner");
+          await dispatchNotificationsToRecipients(ticket, ownerRecipients, "system", "SLA Engine", `Delay justification required for ticket #${ticket.number || ticket.ticket_number}. SLA utilization crossed ${Math.round(effective.percentageUsed)}%.`);
+          await execute(
+            "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [ticket.id, "sla_delay_requested", "internal", "system", "SLA Engine", "Delay justification requested from the assigned owner.", JSON.stringify({ percentageUsed: effective.percentageUsed, slaType: effective.slaType })]
+          );
+        }
+
+        if (nextMeta.active) {
+          nextMeta.monitoredSla = effective.slaType || nextMeta.monitoredSla;
+          nextMeta.monitoredPercentage = Math.round(effective.percentageUsed * 100) / 100;
+          nextMeta.updatedAt = nowIso;
+        }
+
+        if (nextMeta.active && nextMeta.lastSubmittedAt && nextMeta.followUpIntervalMinutes > 0 && !nextMeta.rcaRequired) {
+          const nextDueMs = toMillis(nextMeta.lastSubmittedAt) + nextMeta.followUpIntervalMinutes * 60 * 1000;
+          if (!nextMeta.nextFollowUpAt || Math.abs(toMillis(nextMeta.nextFollowUpAt) - nextDueMs) > 1000) {
+            nextMeta.nextFollowUpAt = new Date(nextDueMs).toISOString();
+            changed = true;
+          }
+        }
+
+        if (nextMeta.active && nextMeta.nextFollowUpAt && toMillis(nextMeta.nextFollowUpAt) <= now.getTime() && !nextMeta.rcaRequired && !nextMeta.awaitingOwnerResponse) {
+          nextMeta.awaitingOwnerResponse = true;
+          nextMeta.pendingResponseType = "follow_up";
+          nextMeta.latestStatus = "follow_up_due";
+          nextMeta.lastRequestedAt = nowIso;
+          nextLogs.push({
+            id: `followup-${Date.now()}`,
+            type: "follow_up_requested",
+            timestamp: nowIso,
+            actorId: "system",
+            actorName: "SLA Engine",
+            message: "Automated SLA follow-up requested from the assigned owner.",
+          });
+          changed = true;
+
+          const recipients = await getEscalationRecipients(ticket);
+          const ownerRecipients = recipients.filter((recipient) => recipient.level === "owner");
+          await dispatchNotificationsToRecipients(ticket, ownerRecipients, "system", "SLA Engine", `Progress update required for ticket #${ticket.number || ticket.ticket_number}. Please provide the latest progress, blocker status, ETA, and resolution percentage.`);
+          await execute(
+            "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [ticket.id, "sla_follow_up_requested", "internal", "system", "SLA Engine", "Automated SLA follow-up requested from the assigned owner.", null]
+          );
+        }
+
+        if (nextMeta.awaitingOwnerResponse && nextMeta.lastRequestedAt && !nextMeta.rcaRequired) {
+          const reminderDue = toMillis(nextMeta.lastRequestedAt) + SLA_DELAY_REMINDER_MINUTES * 60 * 1000 * Math.max(1, nextMeta.reminderCount + 1);
+          if (reminderDue <= now.getTime()) {
+            nextMeta.reminderCount += 1;
+            nextMeta.lastReminderAt = nowIso;
+            nextMeta.latestStatus = "reminder_due";
+            nextLogs.push({
+              id: `reminder-${Date.now()}`,
+              type: "reminder_sent",
+              timestamp: nowIso,
+              actorId: "system",
+              actorName: "SLA Engine",
+              message: `Reminder ${nextMeta.reminderCount} sent for pending SLA delay response.`,
+            });
+            changed = true;
+
+            const recipients = await getEscalationRecipients(ticket);
+            const ownerRecipients = recipients.filter((recipient) => recipient.level === "owner");
+            await dispatchNotificationsToRecipients(ticket, ownerRecipients, "system", "SLA Engine", `Reminder ${nextMeta.reminderCount}: ticket #${ticket.number || ticket.ticket_number} is waiting for your SLA delay update.`);
+            await execute(
+              "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [ticket.id, "sla_reminder_sent", "internal", "system", "SLA Engine", `Reminder ${nextMeta.reminderCount} sent for pending SLA delay response.`, null]
+            );
+
+            if (nextMeta.reminderCount >= 2) {
+              const escalationRecipients = recipients.filter((recipient) => recipient.level !== "owner").slice(0, Math.min(3, nextMeta.reminderCount - 1));
+              if (escalationRecipients.length > 0) {
+                nextMeta.escalationLevel = Math.max(nextMeta.escalationLevel, escalationRecipients.length);
+                nextMeta.escalatedAt = nowIso;
+                nextMeta.latestStatus = "escalated";
+                nextLogs.push({
+                  id: `escalation-${Date.now()}`,
+                  type: "escalated",
+                  timestamp: nowIso,
+                  actorId: "system",
+                  actorName: "SLA Engine",
+                  message: `Escalated pending SLA delay response to ${escalationRecipients.map((recipient) => recipient.name).join(", ")}.`,
+                  data: { escalationLevel: nextMeta.escalationLevel }
+                });
+                changed = true;
+
+                await dispatchNotificationsToRecipients(ticket, escalationRecipients, "system", "SLA Engine", `Escalation: ticket #${ticket.number || ticket.ticket_number} owner has not provided the required SLA delay response.`);
+                await execute(
+                  "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  [ticket.id, "sla_escalated", "internal", "system", "SLA Engine", `SLA delay response escalated to ${escalationRecipients.map((recipient) => recipient.name).join(", ")}.`, JSON.stringify({ escalationLevel: nextMeta.escalationLevel })]
+                );
+              }
+            }
+          }
+        }
+
+        if (nextMeta.active && effective.breached && !nextMeta.breachAt) {
+          const breachDurationMs = Math.max(0, now.getTime() - ((effective.deadlineMs || now.getTime()) + Number(ticket.totalPausedTime || 0)));
+          nextMeta.breachAt = nowIso;
+          nextMeta.breachDurationMs = breachDurationMs;
+          nextMeta.rcaRequired = true;
+          nextMeta.correctiveActionRequired = true;
+          nextMeta.awaitingOwnerResponse = true;
+          nextMeta.pendingResponseType = "rca";
+          nextMeta.latestStatus = "breached";
+          nextMeta.lastRequestedAt = nowIso;
+          nextLogs.push({
+            id: `breach-${Date.now()}`,
+            type: "breached",
+            timestamp: nowIso,
+            actorId: "system",
+            actorName: "SLA Engine",
+            message: `SLA breached after ${formatBreachDuration(breachDurationMs)}. RCA and corrective action are now mandatory.`,
+            data: { breachDurationMs, monitoredSla: nextMeta.monitoredSla }
+          });
+          changed = true;
+
+          const recipients = await getEscalationRecipients(ticket);
+          await dispatchNotificationsToRecipients(ticket, recipients, "system", "SLA Engine", `SLA breach alert for ticket #${ticket.number || ticket.ticket_number}. RCA, corrective action, and final resolution explanation are required.`);
+          await execute(
+            "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [ticket.id, "sla_breached", "internal", "system", "SLA Engine", "SLA breached. RCA and corrective action are mandatory.", JSON.stringify({ breachDurationMs })]
+          );
+
+          // Call recordBreach here!
+          const breachTimeslot = getBreachTimeslot(breachDurationMs);
+          const startMs = new Date(ticket.resolutionSlaStartTime || ticket.firstResponseAt || ticket.createdAt).getTime();
+          const actualTimeMs = now.getTime() - startMs;
+          await recordBreach({
+            record_id: ticket.id,
+            record_type: "Ticket",
+            assigned_user: ticket.assignedTo || "unassigned",
+            assigned_user_name: ticket.assignedToName || "Unassigned",
+            sla_name: effective.slaType === "resolution" ? "Resolution SLA" : "Response SLA",
+            sla_target: effective.slaType === "resolution" ? ticket.resolutionDeadline : ticket.responseDeadline,
+            actual_time_taken: formatBreachDuration(actualTimeMs),
+            breach_duration: formatBreachDuration(breachDurationMs),
+            breach_timeslot: breachTimeslot,
+            breach_timestamp: effective.slaType === "resolution" ? ticket.resolutionDeadline : ticket.responseDeadline,
+            status: "active"
+          });
+        }
+
+        if (nextMeta.breachAt && nextMeta.rcaRequired && !nextMeta.rootCauseAnalysis && !nextMeta.rcaEscalated) {
+          const breachTime = new Date(nextMeta.breachAt).getTime();
+          if (now.getTime() - breachTime >= 1 * 60 * 60 * 1000) {
+            nextMeta.rcaEscalated = true;
+            nextMeta.latestStatus = "escalated";
+            nextLogs.push({
+              id: `rca-escalation-${Date.now()}`,
+              type: "escalated",
+              timestamp: nowIso,
+              actorId: "system",
+              actorName: "SLA Engine",
+              message: "RCA missing for 1+ hours. Escalating ticket status and notifying administrators."
+            });
+            changed = true;
+            await execute(
+              "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [ticket.id, "sla_escalated", "internal", "system", "SLA Engine", "RCA missing for 1+ hours. SLA breach escalated to administrators.", null]
+            );
+            
+            const recipients = await getEscalationRecipients(ticket);
+            const adminRecipients = recipients.filter((recipient) => recipient.level === "service_owner" || recipient.level === "manager");
+            await dispatchNotificationsToRecipients(ticket, adminRecipients.length > 0 ? adminRecipients : recipients, "system", "SLA Engine", `Escalation: RCA missing for 1+ hours on breached ticket #${ticket.number || ticket.ticket_number}.`);
+            
+            await fsUpdateDoc(fsDoc(firestoreDb, "tickets", docSnap.id), {
+              status: "Escalated",
+              updatedAt: nowIso
+            });
+          }
+        }
+
+        if (changed) {
+          await fsUpdateDoc(fsDoc(firestoreDb, "tickets", docSnap.id), {
+            slaDelayMeta: nextMeta,
+            slaDelayLogs: nextLogs,
+            updatedAt: nowIso,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("[SLA Delay] Firestore accountability monitor error:", err.message);
+    }
+  }
+
+  try {
+    const sqlTickets = await query("SELECT * FROM tickets WHERE status NOT IN ('Resolved', 'Closed', 'Canceled')");
+    for (const ticket of sqlTickets) {
+      const effective = computeActiveSlaUsage(ticket, now.getTime());
+      const meta = parseSlaDelayMeta(ticket.sla_delay_meta_json);
+      const logs = parseSlaDelayLogs(ticket.sla_delay_logs_json);
+      let nextMeta = { ...meta };
+      let nextLogs = [...logs];
+      let changed = false;
+
+      if (effective.active && effective.percentageUsed >= SLA_DELAY_THRESHOLD_PERCENT && !meta.triggeredAt) {
+        nextMeta = { ...createDefaultSlaDelayMeta(nowIso, effective), followUpIntervalMinutes: SLA_DELAY_FOLLOW_UP_MINUTES };
+        nextLogs.push({
+          id: `sql-threshold-${Date.now()}`,
+          type: "threshold_reached",
+          timestamp: nowIso,
+          actorId: "system",
+          actorName: "SLA Engine",
+          message: `SLA utilization reached ${Math.round(effective.percentageUsed)}%. Delay justification is mandatory.`,
+        });
+        changed = true;
+        await execute(
+          "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [String(ticket.id), "sla_delay_requested", "internal", "system", "SLA Engine", "Delay justification requested from the assigned owner.", JSON.stringify({ percentageUsed: effective.percentageUsed, slaType: effective.slaType })]
+        );
+      }
+
+      if (nextMeta.active && effective.breached && !nextMeta.breachAt) {
+        const breachDurationMs = Math.max(0, now.getTime() - ((effective.deadlineMs || now.getTime()) + Number(ticket.total_paused_time || 0)));
+        nextMeta = {
+          ...nextMeta,
+          breachAt: nowIso,
+          breachDurationMs,
+          rcaRequired: true,
+          correctiveActionRequired: true,
+          awaitingOwnerResponse: true,
+          pendingResponseType: "rca",
+          latestStatus: "breached",
+          updatedAt: nowIso,
+        };
+        nextLogs.push({
+          id: `sql-breach-${Date.now()}`,
+          type: "breached",
+          timestamp: nowIso,
+          actorId: "system",
+          actorName: "SLA Engine",
+          message: `SLA breached after ${formatBreachDuration(breachDurationMs)}. RCA is mandatory.`,
+        });
+        changed = true;
+        await execute(
+          "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [String(ticket.id), "sla_breached", "internal", "system", "SLA Engine", "SLA breached. RCA and corrective action are mandatory.", JSON.stringify({ breachDurationMs })]
+        );
+
+        // Call recordBreach here!
+        const breachTimeslot = getBreachTimeslot(breachDurationMs);
+        const startMs = new Date(ticket.resolution_sla_start_time || ticket.first_response_at || ticket.created_at).getTime();
+        const actualTimeMs = now.getTime() - startMs;
+        await recordBreach({
+          record_id: String(ticket.id),
+          record_type: "Ticket",
+          assigned_user: ticket.assigned_to || "unassigned",
+          assigned_user_name: ticket.assigned_to_name || "Unassigned",
+          sla_name: effective.slaType === "resolution" ? "Resolution SLA" : "Response SLA",
+          sla_target: effective.slaType === "resolution" ? ticket.resolution_deadline : ticket.response_deadline,
+          actual_time_taken: formatBreachDuration(actualTimeMs),
+          breach_duration: formatBreachDuration(breachDurationMs),
+          breach_timeslot: breachTimeslot,
+          breach_timestamp: effective.slaType === "resolution" ? ticket.resolution_deadline : ticket.response_deadline,
+          status: "active"
+        });
+
+        // Dispatch notifications when breach occurs
+        const recipients = await getEscalationRecipients(ticket);
+        await dispatchNotificationsToRecipients(ticket, recipients, "system", "SLA Engine", `SLA breach alert for ticket #${ticket.ticket_number}. RCA, corrective action, and final resolution explanation are required.`);
+      }
+
+      if (nextMeta.breachAt && nextMeta.rcaRequired && !nextMeta.rootCauseAnalysis && !nextMeta.rcaEscalated) {
+        const breachTime = new Date(nextMeta.breachAt).getTime();
+        if (now.getTime() - breachTime >= 1 * 60 * 60 * 1000) {
+          nextMeta.rcaEscalated = true;
+          nextMeta.latestStatus = "escalated";
+          nextLogs.push({
+            id: `sql-rca-escalation-${Date.now()}`,
+            type: "escalated",
+            timestamp: nowIso,
+            actorId: "system",
+            actorName: "SLA Engine",
+            message: "RCA missing for 1+ hours. Escalating ticket status and notifying administrators."
+          });
+          changed = true;
+          await execute(
+            "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [String(ticket.id), "sla_escalated", "internal", "system", "SLA Engine", "RCA missing for 1+ hours. SLA breach escalated to administrators.", null]
+          );
+          
+          const recipients = await getEscalationRecipients(ticket);
+          const adminRecipients = recipients.filter((recipient) => recipient.level === "service_owner" || recipient.level === "manager");
+          await dispatchNotificationsToRecipients(ticket, adminRecipients.length > 0 ? adminRecipients : recipients, "system", "SLA Engine", `Escalation: RCA missing for 1+ hours on breached ticket #${ticket.ticket_number}.`);
+          
+          await execute(
+            "UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?",
+            ["Escalated", formatDate(now), ticket.id]
+          );
+        }
+      }
+
+      if (changed) {
+        await execute(
+          "UPDATE tickets SET sla_delay_meta_json = ?, sla_delay_logs_json = ?, updated_at = ? WHERE id = ?",
+          [JSON.stringify(nextMeta), JSON.stringify(nextLogs), formatDate(now), ticket.id]
+        );
+      }
+    }
+  } catch (err: any) {
+    console.error("[SLA Delay] SQL accountability monitor error:", err.message);
+  }
 }
 
 // SLA Escalation Engine
@@ -582,6 +1254,7 @@ async function startServer() {
   // Initialize database connection
   await initDatabase();
   await testConnection();
+  await ensureTicketSlaDelayColumns();
 
   // Auto-create timesheet tables if they don't exist
   if (!useSQLite) {
@@ -746,6 +1419,7 @@ async function startServer() {
           stop_time TIMESTAMP NULL,
           duration INT DEFAULT 0,
           status ENUM('active', 'completed', 'canceled') DEFAULT 'active',
+          ticket_number VARCHAR(64),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           INDEX idx_user_session (user_id, session_id),
           INDEX idx_status (status)
@@ -767,6 +1441,7 @@ async function startServer() {
           captured_at TIMESTAMP NULL,
           keystrokes INT DEFAULT 0,
           clicks INT DEFAULT 0,
+          ticket_number VARCHAR(64),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           INDEX idx_session (session_id),
           INDEX idx_user (user_id),
@@ -1481,6 +2156,8 @@ async function startServer() {
       res.json({
         id: ticket.id.toString(),
         ...ticket,
+        slaDelayMeta: parseSlaDelayMeta(ticket.sla_delay_meta_json),
+        slaDelayLogs: parseSlaDelayLogs(ticket.sla_delay_logs_json),
         customFields,
         comments: comments.map(c => ({ id: c.id.toString(), ...c })),
         history: history.map(h => ({ id: h.id.toString(), ...h }))
@@ -1548,7 +2225,9 @@ async function startServer() {
         service: req.body.service || null,
         service_offering: req.body.serviceOffering || null,
         cmdb_item: req.body.cmdbItem || null,
-        subcategory: req.body.subcategory || null
+        subcategory: req.body.subcategory || null,
+        sla_delay_meta_json: req.body.slaDelayMeta ? JSON.stringify(req.body.slaDelayMeta) : null,
+        sla_delay_logs_json: req.body.slaDelayLogs ? JSON.stringify(req.body.slaDelayLogs) : JSON.stringify([])
       };
 
       // Insert ticket
@@ -1689,7 +2368,12 @@ async function startServer() {
         console.error("[Notification] Failed to send create notifications:", notifErr.message);
       }
 
-      res.json({ id: ticketId.toString(), ...createdTicket });
+      res.json({
+        id: ticketId.toString(),
+        ...createdTicket,
+        slaDelayMeta: parseSlaDelayMeta(createdTicket.sla_delay_meta_json),
+        slaDelayLogs: parseSlaDelayLogs(createdTicket.sla_delay_logs_json)
+      });
 
     } catch (error: any) {
       console.error("Error creating ticket:", error);
@@ -1726,6 +2410,51 @@ async function startServer() {
       }
       const ticket = tickets[0];
 
+      // SLA Breach Reason (RCA) Backend Validation
+      if (req.body.status === "Resolved" || req.body.status === "Closed") {
+        let slaMeta: any = {};
+        if (ticket.sla_delay_meta_json) {
+          try {
+            slaMeta = JSON.parse(ticket.sla_delay_meta_json);
+          } catch {}
+        }
+        
+        let isBreached = slaMeta.latestStatus === "breached" || slaMeta.breachAt;
+        if (ticket.resolution_deadline) {
+          const deadline = new Date(ticket.resolution_deadline).getTime();
+          const totalPaused = Number(ticket.total_paused_time || 0) || 0;
+          if (Date.now() > deadline + totalPaused && !ticket.resolved_at) {
+            isBreached = true;
+          }
+        }
+        if (ticket.response_deadline && !ticket.first_response_at) {
+          const deadline = new Date(ticket.response_deadline).getTime();
+          const totalPaused = Number(ticket.total_paused_time || 0) || 0;
+          if (Date.now() > deadline + totalPaused) {
+            isBreached = true;
+          }
+        }
+
+        if (isBreached) {
+          const payloadMeta = req.body.slaDelayMeta || req.body.sla_delay_meta_json;
+          let newSlaMeta = slaMeta;
+          if (payloadMeta) {
+            newSlaMeta = typeof payloadMeta === 'string' ? JSON.parse(payloadMeta) : payloadMeta;
+          }
+          
+          const hasSubmittedRca = !!(newSlaMeta.breachReasonSubmittedAt || newSlaMeta.rootCauseAnalysis?.trim());
+          const requiredMissing = !newSlaMeta.rootCauseAnalysis?.trim() || 
+                                  !newSlaMeta.dependencyDetails?.trim() || 
+                                  !newSlaMeta.correctiveActionDetails?.trim() || 
+                                  !newSlaMeta.preventiveAction?.trim() || 
+                                  !newSlaMeta.finalResolutionExplanation?.trim();
+                                  
+          if (!hasSubmittedRca && requiredMissing) {
+            return res.status(400).json({ error: "SLA Breach Root Cause Analysis (RCA) is mandatory before resolving or closing a breached ticket." });
+          }
+        }
+      }
+
       // Calculate points if the ticket is being resolved
       let points = 0;
       if ((req.body.status === "Resolved" || req.body.status === "Closed") && !ticket.resolved_at) {
@@ -1759,19 +2488,72 @@ async function startServer() {
         }
       }
 
+      // Get valid column names from database
+      let dbColNames: string[] = [];
+      try {
+        if (useSQLite) {
+          const db = await getSQLiteDb();
+          const columns = await db.all("PRAGMA table_info(tickets)");
+          dbColNames = columns.map(c => c.name);
+        } else {
+          const columns = await query("SHOW COLUMNS FROM tickets");
+          dbColNames = columns.map(c => c.Field);
+        }
+      } catch (colErr) {
+        console.error("Failed to fetch ticket columns:", colErr);
+      }
+
+      // Map camelCase keys from req.body to snake_case column names
+      const keyMap: Record<string, string> = {
+        assignedTo: "assigned_to",
+        assignedToName: "assigned_to_name",
+        assignmentGroup: "assignment_group",
+        responseDeadline: "response_deadline",
+        resolutionDeadline: "resolution_deadline",
+        responseSlaStatus: "response_sla_status",
+        resolutionSlaStatus: "resolution_sla_status",
+        responseSlaStartTime: "response_sla_start_time",
+        resolutionSlaStartTime: "resolution_sla_start_time",
+        firstResponseAt: "first_response_at",
+        totalPausedTime: "total_paused_time",
+        onHoldStart: "on_hold_start",
+        incidentCategory: "incident_category",
+        resolvedBy: "resolved_by",
+        resolvedAt: "resolved_at",
+        closedBy: "closed_by",
+        closedAt: "closed_at",
+        companyId: "company_id",
+        affectedUserEmail: "affected_user_email",
+        reportingUserEmail: "reporting_user_email",
+        callerEmail: "caller_email",
+        resolutionCode: "resolution_code",
+        resolutionNotes: "resolution_notes",
+        resolutionMethod: "resolution_method",
+        closureReason: "closure_reason",
+        slaDelayMeta: "sla_delay_meta_json",
+        slaDelayLogs: "sla_delay_logs_json"
+      };
+
       const updateData: any = {
-        ...req.body,
         points: ticket.points + points,
         updated_at: formatDate(new Date())
       };
 
-      if (req.body.incidentCategory !== undefined) {
-        updateData.incident_category = req.body.incidentCategory;
-        delete updateData.incidentCategory;
+      const ignoredKeys = new Set(["id", "updatedById", "updatedBy", "customFields", "history", "points", "updated_at", "createdAt", "updatedAt"]);
+
+      for (const [key, value] of Object.entries(req.body)) {
+        if (ignoredKeys.has(key)) continue;
+        const dbKey = keyMap[key] || key;
+        
+        // Stringify complex objects
+        if ((key === "slaDelayMeta" || key === "slaDelayLogs") && value && typeof value === "object") {
+          updateData[dbKey] = JSON.stringify(value);
+        } else {
+          updateData[dbKey] = value;
+        }
       }
 
       if (!hasUpdateAccess) {
-        delete updateData.incidentCategory;
         delete updateData.incident_category;
       }
 
@@ -1779,8 +2561,14 @@ async function startServer() {
         updateData.resolved_at = formatDate(new Date());
       }
 
-      if (updateData.customFields !== undefined) {
-        delete updateData.customFields;
+      // Filter updateData to only valid columns present in the database table
+      if (dbColNames.length > 0) {
+        const validSet = new Set(dbColNames);
+        for (const key of Object.keys(updateData)) {
+          if (!validSet.has(key)) {
+            delete updateData[key];
+          }
+        }
       }
 
       // Build update query
@@ -1888,7 +2676,13 @@ async function startServer() {
         console.error("[Notification] Error in update route:", notifErr.message);
       }
 
-      res.json({ id: id.toString(), ...updatedTicket, pointsAwarded: points });
+      res.json({
+        id: id.toString(),
+        ...updatedTicket,
+        slaDelayMeta: parseSlaDelayMeta(updatedTicket?.sla_delay_meta_json),
+        slaDelayLogs: parseSlaDelayLogs(updatedTicket?.sla_delay_logs_json),
+        pointsAwarded: points
+      });
 
     } catch (error: any) {
       console.error("Error updating ticket:", error);
@@ -2133,6 +2927,29 @@ async function startServer() {
         "INSERT INTO ticket_activities (ticket_id, activity_type, visibility_type, created_by, created_by_name, message, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [id, actType, visType, created_by || 'System', created_by_name || 'System', message.trim(), metadata_json ? JSON.stringify(metadata_json) : null]
       );
+
+      // Audit Logging for SLA RCA & Follow Up
+      if (actType === 'sla_rca' || actType === 'sla_follow_up') {
+        try {
+          let slaType = 'resolution';
+          let reasonText = message;
+          if (metadata_json) {
+            const parsedMeta = typeof metadata_json === 'string' ? JSON.parse(metadata_json) : metadata_json;
+            slaType = parsedMeta.slaDelayMeta?.monitoredSla || 'resolution';
+            if (actType === 'sla_rca') {
+              reasonText = parsedMeta.slaDelayMeta?.rootCauseAnalysis || message;
+            } else {
+              reasonText = parsedMeta.slaDelayMeta?.latestProgressUpdate || message;
+            }
+          }
+          await execute(
+            "INSERT INTO sla_audit_logs (ticket_id, sla_type, event_type, reason, timestamp) VALUES (?, ?, ?, ?, ?)",
+            [id, slaType, actType, reasonText, formatDate(new Date())]
+          );
+        } catch (auditErr) {
+          console.error("Failed to insert SLA audit log:", auditErr);
+        }
+      }
 
       // Update ticket's updated_at timestamp when a note is added
       try {
@@ -3079,9 +3896,13 @@ Respond ONLY with valid JSON.`;
         const db = await getSQLiteDb();
         await db.exec("ALTER TABLE activity_entries ADD COLUMN approval_status TEXT DEFAULT 'Pending'");
         await db.exec("ALTER TABLE activity_entries ADD COLUMN approved_by TEXT");
+        await db.exec("ALTER TABLE activity_sessions ADD COLUMN ticket_number TEXT");
+        await db.exec("ALTER TABLE activity_entries ADD COLUMN ticket_number TEXT");
       } else {
         await execute("ALTER TABLE activity_entries ADD COLUMN approval_status VARCHAR(20) DEFAULT 'Pending'");
         await execute("ALTER TABLE activity_entries ADD COLUMN approved_by VARCHAR(128)");
+        await execute("ALTER TABLE activity_sessions ADD COLUMN ticket_number VARCHAR(64)");
+        await execute("ALTER TABLE activity_entries ADD COLUMN ticket_number VARCHAR(64)");
       }
     } catch (e) {
       // Ignore if columns already exist
@@ -3322,11 +4143,11 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   // ═══ ACTIVITY SESSIONS CRUD ═══
   app.post('/api/activity-sessions', async (req: any, res: any) => {
     try {
-      const { session_id, user_id, user_name, start_time, status } = req.body;
+      const { session_id, user_id, user_name, start_time, status, ticket_number } = req.body;
       if (!user_id || !session_id) return res.status(400).json({ error: 'Missing user_id or session_id' });
       const result = await execute(
-        `INSERT INTO activity_sessions (session_id, user_id, user_name, start_time, status) VALUES (?, ?, ?, ?, ?)`,
-        [session_id, user_id, user_name || null, start_time || new Date().toISOString(), status || 'active']
+        `INSERT INTO activity_sessions (session_id, user_id, user_name, start_time, status, ticket_number) VALUES (?, ?, ?, ?, ?, ?)`,
+        [session_id, user_id, user_name || null, start_time || new Date().toISOString(), status || 'active', ticket_number || null]
       );
       const created = await query('SELECT * FROM activity_sessions WHERE id = ?', [result.insertId]);
       res.json({ id: result.insertId.toString(), ...created[0] });
@@ -3368,17 +4189,17 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   });
 
   // ═══ ACTIVITY ENTRIES CRUD ═══
-    app.post('/api/activity-entries', async (req: any, res: any) => {
+  app.post('/api/activity-entries', async (req: any, res: any) => {
     try {
       const { session_id, user_id, screenshot_url, screenshot_filename, screenshot_format,
-        screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks } = req.body;
+        screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks, ticket_number } = req.body;
       if (!user_id) return res.status(400).json({ error: 'Missing user_id' });
       const result = await execute(
-        `INSERT INTO activity_entries (session_id, user_id, screenshot_url, screenshot_filename, screenshot_format, screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO activity_entries (session_id, user_id, screenshot_url, screenshot_filename, screenshot_format, screenshot_size_kb, activity_label, description, confidence, captured_at, keystrokes, clicks, ticket_number)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [session_id || null, user_id, screenshot_url || null, screenshot_filename || null,
         screenshot_format || null, screenshot_size_kb || null, activity_label || null,
-        description || null, confidence || 0, captured_at || null, keystrokes || 0, clicks || 0]
+        description || null, confidence || 0, captured_at || null, keystrokes || 0, clicks || 0, ticket_number || null]
       );
       const created = await query('SELECT * FROM activity_entries WHERE id = ?', [result.insertId]);
       res.json({ id: result.insertId.toString(), ...created[0] });
@@ -4415,6 +5236,11 @@ Please respond appropriately as a helpful IT assistant.`,
       console.log('[SLAEngine] Monitoring SLA breaches...');
       SLAEngine.monitorBreaches();
     });
+
+    void monitorSlaDelayAccountability();
+    setInterval(() => {
+      void monitorSlaDelayAccountability();
+    }, 5 * 60 * 1000);
 
     console.log('[Enterprise] ✓ Email queue, IMAP polling, SLA engine started');
   });

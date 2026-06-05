@@ -632,7 +632,7 @@ export function AppNavbar() {
               <button
                 type="button"
                 onClick={handleAdvSearchSubmit}
-                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold px-4 py-1.5 rounded-xl transition-all shadow-[0_0_12px_rgba(6,182,212,0.3)] cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 rounded-xl transition-all shadow-[0_0_12px_rgba(37,99,235,0.3)] cursor-pointer"
               >
                 Execute Query
               </button>
@@ -1096,10 +1096,10 @@ export function AppNavbar() {
                     return (
                       <div
                         key={notif.id}
-                        className={`p-4 flex items-start gap-3 hover:bg-primary/5 transition-colors font-outfit ${isUnread ? 'bg-cyan-500/5' : ''}`}
+                        className={`p-4 flex items-start gap-3 hover:bg-primary/5 transition-colors font-outfit ${isUnread ? 'bg-blue-500/5' : ''}`}
                       >
                         {/* Avatar */}
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center flex-shrink-0 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.1)]">
+                        <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-500 dark:text-blue-400 text-xs font-bold flex items-center justify-center flex-shrink-0 border border-blue-500/20 shadow-[0_0_10px_rgba(37,99,235,0.1)]">
                           {initials}
                         </div>
 
@@ -1113,7 +1113,7 @@ export function AppNavbar() {
                             {notif.ticket_number && (
                               <a
                                 href={`/tickets/${notif.ticket_id}`}
-                                className="text-[9px] font-mono font-bold bg-cyan-500/10 text-cyan-500 px-1.5 py-0.5 rounded border border-cyan-500/20 hover:bg-cyan-500/20 transition-all hover:underline"
+                                className="text-[9px] font-mono font-bold bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded border border-blue-500/20 hover:bg-blue-500/20 transition-all hover:underline"
                               >
                                 {notif.ticket_number}
                               </a>
@@ -1126,7 +1126,7 @@ export function AppNavbar() {
 
                         {/* Unread indicator dot */}
                         {isUnread && (
-                          <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full flex-shrink-0 mt-1.5 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.6)]" />
+                          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0 mt-1.5 animate-pulse shadow-[0_0_8px_rgba(37,99,235,0.6)]" />
                         )}
                       </div>
                     );
@@ -1142,8 +1142,8 @@ export function AppNavbar() {
             <div className="text-xs font-bold text-foreground">{profile?.name || "User"}</div>
             <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-black">{profile?.role || "Guest"}</div>
           </div>
-          <div className="w-9 h-9 bg-gradient-to-tr from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center shadow-lg shadow-black/10">
-            <User className="w-5 h-5 text-cyan-400" />
+          <div className="w-9 h-9 bg-blue-500/10 border border-blue-500/20 rounded-full flex items-center justify-center shadow-lg shadow-black/10">
+            <User className="w-5 h-5 text-blue-500 dark:text-blue-400" />
           </div>
         </div>
       </div>

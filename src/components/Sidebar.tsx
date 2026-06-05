@@ -96,7 +96,6 @@ export function Sidebar() {
           { icon: Ticket, label: "My Tickets", path: "/timesheet" },
           { icon: BarChart2, label: "Timesheet Reports", path: "/timesheet/reports" },
           { icon: Monitor, label: "AI Activity Tracker", path: "/activity-tracker" },
-          { icon: Search, label: "Global Search", path: "/global-search" },
         ]
         : [
           { icon: LayoutDashboard, label: "Personal Dashboard", path: "/" },
@@ -105,7 +104,6 @@ export function Sidebar() {
           { icon: Ticket, label: "My Tickets", path: "/timesheet" },
           { icon: BarChart2, label: "Timesheet Reports", path: "/timesheet/reports" },
           { icon: Monitor, label: "AI Activity Tracker", path: "/activity-tracker" },
-          { icon: Search, label: "Global Search", path: "/global-search" },
         ]
     },
     {
@@ -154,6 +152,7 @@ export function Sidebar() {
       label: "Meetings",
       items: [
         { icon: CalendarDays, label: "Meeting Management", path: "/meetings" },
+        { icon: PlusCircle,   label: "Create Meeting",     path: "/create-meeting" },
       ]
     },
     {
@@ -225,14 +224,14 @@ export function Sidebar() {
               <img
                 src={branding.logoBase64}
                 alt="Logo"
-                className="w-8 h-8 rounded-lg object-cover shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                className="w-8 h-8 rounded-lg object-cover shadow-[0_0_10px_rgba(37,99,235,0.3)]"
               />
             ) : (
-              <div className="w-8 h-8 bg-gradient-to-tr from-cyan-400 to-purple-600 rounded-lg flex items-center justify-center font-outfit font-black text-white shadow-[0_0_12px_rgba(6,182,212,0.4)]">
+              <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-blue-800 rounded-lg flex items-center justify-center font-outfit font-black text-white shadow-[0_0_12px_rgba(37,99,235,0.4)]">
                 {branding.companyName.charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="text-sm font-outfit font-black tracking-wider bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent uppercase truncate max-w-[140px]" title={branding.companyName}>
+            <span className="text-sm font-outfit font-black tracking-wider text-blue-600 dark:text-blue-400 uppercase truncate max-w-[140px]" title={branding.companyName}>
               {branding.companyName}
             </span>
           </div>
@@ -241,7 +240,7 @@ export function Sidebar() {
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="p-1.5 hover:bg-white/10 rounded-lg transition-all duration-200 cursor-pointer"
         >
-          {isCollapsed ? <Menu className="w-4 h-4 text-cyan-400" /> : <ChevronLeft className="w-4 h-4 text-text-dim hover:text-white" />}
+          {isCollapsed ? <Menu className="w-4 h-4 text-blue-500" /> : <ChevronLeft className="w-4 h-4 text-text-dim hover:text-white" />}
         </button>
       </div>
 
@@ -249,13 +248,13 @@ export function Sidebar() {
       {!isCollapsed && (
         <div className="p-4 shrink-0">
           <div className="relative group">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-cyan-400 transition-colors" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-blue-500 transition-colors" />
             <input
               type="text"
               placeholder="Navigator search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs outline-none focus:ring-1 focus:ring-cyan-500/30 focus:border-cyan-400 focus:bg-white/10 focus:shadow-[0_0_12px_rgba(6,182,212,0.15)] transition-all placeholder:text-text-dim/60"
+              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-xs outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white/10 focus:shadow-[0_0_12px_rgba(37,99,235,0.15)] transition-all placeholder:text-text-dim/60"
             />
           </div>
         </div>
@@ -272,7 +271,7 @@ export function Sidebar() {
               >
                 <span>{section.label}</span>
                 {expandedSections.includes(section.label) ? (
-                  <ChevronDown className="w-3 h-3 text-cyan-400/70 group-hover:text-cyan-400" />
+                  <ChevronDown className="w-3 h-3 text-blue-500/70 group-hover:text-blue-500" />
                 ) : (
                   <ChevronRight className="w-3 h-3 text-text-dim/50 group-hover:text-white" />
                 )}
@@ -288,17 +287,17 @@ export function Sidebar() {
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-xl transition-all relative group cursor-pointer",
                       location.pathname === item.path
-                        ? "bg-gradient-to-r from-cyan-500/15 to-purple-500/5 text-cyan-400 border-r border-cyan-400 shadow-[inset_0_0_12px_rgba(6,182,212,0.1)] font-semibold"
+                        ? "bg-blue-500/10 text-blue-500 dark:text-blue-400 border-r border-blue-500 shadow-[inset_0_0_12px_rgba(37,99,235,0.1)] font-semibold"
                         : "text-text-dim hover:bg-white/5 hover:text-white"
                     )}
                   >
                     <item.icon className={cn(
                       "w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                      location.pathname === item.path ? "text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]" : "text-text-dim group-hover:text-white"
+                      location.pathname === item.path ? "text-blue-500 drop-shadow-[0_0_8px_rgba(37,99,235,0.6)]" : "text-text-dim group-hover:text-white"
                     )} />
                     {!isCollapsed && <span className="text-xs truncate flex-grow">{item.label}</span>}
                     {!isCollapsed && item.badge !== undefined && item.badge > 0 && (
-                      <span className="bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 text-[10px] font-outfit font-black px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                      <span className="bg-blue-600 text-white text-[10px] font-outfit font-black px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center shadow-[0_0_10px_rgba(37,99,235,0.3)]">
                         {item.badge}
                       </span>
                     )}
@@ -325,7 +324,7 @@ export function Sidebar() {
             isCollapsed && "justify-center px-0"
           )}
         >
-          {isDarkMode ? <Sun className="w-4 h-4 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]" /> : <Moon className="w-4 h-4 text-cyan-400" />}
+          {isDarkMode ? <Sun className="w-4 h-4 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]" /> : <Moon className="w-4 h-4 text-blue-500" />}
           {!isCollapsed && <span>{isDarkMode ? "Light Spectrum" : "Dark Cyber Mode"}</span>}
         </button>
         <button

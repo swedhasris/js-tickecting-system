@@ -5,10 +5,12 @@ import { useAuth } from "./AuthContext";
 
 interface Ticket {
   id: string;
+  number: string;
   title: string;
   status: string;
   priority: string;
   assignedTo?: string;
+  assignedToName?: string;
   createdBy: string;
   createdAt: any;
   updatedAt: any;
@@ -39,7 +41,7 @@ export function TicketsProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user || !profile) {
+    if (!user) {
       setLoading(false);
       return;
     }
@@ -57,12 +59,14 @@ export function TicketsProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const ticketsRef = collection(db, "tickets");
-      const q = query(ticketsRef, where("status", "not-in", ["Resolved", "Closed"]));
+      const q = query(ticketsRef); // Fetch all to avoid missing index errors
 
       unsubscribe = onSnapshot(
         q,
         (snapshot) => {
-          const ticketsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Ticket));
+          const ticketsData = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() } as Ticket))
+            .filter(t => !["Resolved", "Closed"].includes(t.status));
           setTickets(ticketsData);
           setLoading(false);
         },
@@ -79,7 +83,7 @@ export function TicketsProvider({ children }: { children: React.ReactNode }) {
     }
 
     return () => { if (unsubscribe) unsubscribe(); };
-  }, [user, profile]);
+  }, [user]);
 
   const openTicketsCount = tickets.length;
   const assignedToMeCount = tickets.filter(t =>

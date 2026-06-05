@@ -50,6 +50,21 @@ function createWindow() {
     backgroundColor: '#0f172a',
   });
 
+  // Grant all permissions dynamically for localhost, WebRTC, and media
+  const allowAllPermissions = (webContents, permission, callback) => {
+    callback(true);
+  };
+  
+  mainWindow.webContents.session.setPermissionRequestHandler(allowAllPermissions);
+  mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission) => {
+    return true;
+  });
+
+  // Set on default session as well for fallback / subframes / overlays
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler(allowAllPermissions);
+  session.defaultSession.setPermissionCheckHandler(() => true);
+
   mainWindow.loadURL(SERVER_URL);
 
   mainWindow.once('ready-to-show', () => {

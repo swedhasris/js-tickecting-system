@@ -44,6 +44,14 @@ export function Leaderboard() {
 
   const [metricTab, setMetricTab] = useState<"performance" | "breaches">("performance");
   const [breachStats, setBreachStats] = useState<any[]>([]);
+  const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
+
+  const toggleUserExpand = (userId: string) => {
+    setExpandedUsers(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }));
+  };
 
   useEffect(() => {
     fetchLeaderboard();
@@ -52,31 +60,72 @@ export function Leaderboard() {
   }, []);
 
   useEffect(() => {
-    if (!firebaseAvailable) return;
-    const q = query(collection(db, "sla_breaches"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const userBreaches: Record<string, { id: string; name: string; count: number; details: any[] }> = {};
-      snapshot.docs.forEach((d) => {
-        const b = d.data();
-        const userId = b.assigned_user || "unassigned";
-        const userName = b.assigned_user_name || "Unassigned";
-        if (!userBreaches[userId]) {
-          userBreaches[userId] = {
-            id: userId,
-            name: userName,
-            count: 0,
-            details: []
-          };
-        }
-        userBreaches[userId].count += 1;
-        userBreaches[userId].details.push(b);
-      });
-      const sortedBreaches = Object.values(userBreaches).sort((a, b) => b.count - a.count);
-      setBreachStats(sortedBreaches);
-    }, (err) => {
-      console.error("[Leaderboard] SLA breaches subscription error:", err);
-    });
-    return unsubscribe;
+    const fetchAllTicketsAndBreaches = async () => {
+      try {
+        const res = await fetch("/api/tickets/all");
+        if (!res.ok) throw new Error("Failed to fetch tickets");
+        const tickets = await res.json();
+        
+        // Group by user
+        const userBreaches: Record<string, { id: string; name: string; count: number; details: any[] }> = {};
+        
+        tickets.forEach((ticket: any) => {
+          // Parse SLA Delay Meta
+          let meta: any = {};
+          if (ticket.sla_delay_meta_json) {
+            try {
+              meta = JSON.parse(ticket.sla_delay_meta_json);
+            } catch {}
+          } else if (ticket.slaDelayMeta) {
+            meta = typeof ticket.slaDelayMeta === 'string' ? JSON.parse(ticket.slaDelayMeta) : ticket.slaDelayMeta;
+          }
+          
+          // Check if ticket is breached
+          const isBreached = meta.latestStatus === "breached" || 
+                             meta.breachAt || 
+                             ticket.resolutionSlaStatus === "Breached" || 
+                             ticket.responseSlaStatus === "Breached";
+                             
+          if (isBreached) {
+            const userId = ticket.assignedTo || "unassigned";
+            const userName = ticket.assignedToName || ticket.assignedTo || "Unassigned";
+            
+            if (!userBreaches[userId]) {
+              userBreaches[userId] = {
+                id: userId,
+                name: userName,
+                count: 0,
+                details: []
+              };
+            }
+            
+            userBreaches[userId].count += 1;
+            userBreaches[userId].details.push({
+              id: ticket.id || ticket.uid || ticket.ticket_number || Math.random().toString(),
+              number: ticket.number,
+              slaType: meta.monitoredSla || (ticket.responseSlaStatus === "Breached" ? "response" : "resolution"),
+              breachAt: meta.breachAt || ticket.resolutionDeadline || ticket.responseDeadline,
+              breachDurationMs: meta.breachDurationMs || 0,
+              rootCauseAnalysis: meta.rootCauseAnalysis || "",
+              dependencyDetails: meta.dependencyDetails || "",
+              correctiveActionDetails: meta.correctiveActionDetails || "",
+              preventiveAction: meta.preventiveAction || "",
+              breachReasonSubmittedAt: meta.breachReasonSubmittedAt || null,
+              breachReasonSubmittedBy: meta.breachReasonSubmittedBy || "",
+            });
+          }
+        });
+        
+        const sortedBreaches = Object.values(userBreaches).sort((a, b) => b.count - a.count);
+        setBreachStats(sortedBreaches);
+      } catch (err) {
+        console.error("Error fetching SQL tickets for leaderboard:", err);
+      }
+    };
+    
+    fetchAllTicketsAndBreaches();
+    const interval = setInterval(fetchAllTicketsAndBreaches, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const parseDate = (value: any): Date | null => {
@@ -257,7 +306,8 @@ export function Leaderboard() {
     complianceRate: 0,
     resolvedCount: 0,
     onTimeCount: 0,
-    breachedCount: b.count
+    breachedCount: b.count,
+    details: b.details
   }));
 
   // Podium order: 2nd (left), 1st (center), 3rd (right)
@@ -398,63 +448,122 @@ export function Leaderboard() {
           <div className="divide-y divide-border">
             <AnimatePresence mode="popLayout">
               {displayList.map((user, idx) => (
-                <motion.div
-                  key={user.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ delay: idx * 0.04 }}
-                  className="px-6 py-4 flex items-center gap-4 hover:bg-muted/30 transition-colors"
-                >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${
-                    idx === 0 ? "bg-yellow-400/20 text-yellow-400" :
-                    idx === 1 ? "bg-slate-300/20 text-slate-400" :
-                    idx === 2 ? "bg-amber-700/20 text-amber-600" :
-                    "bg-muted text-muted-foreground"
-                  }`}>
-                    {idx + 1}
-                  </div>
-                  <div className="flex-grow flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary">
-                      {getInitial(user.name)}
-                    </div>
-                    <div>
-                      <div className="font-semibold">{user.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {metricTab === "breaches" ? (
-                          <span>SLA Breaches</span>
-                        ) : (
-                          <span>{user.resolvedCount} ticket{user.resolvedCount !== 1 ? "s" : ""} · {user.avgResolutionMinutes}m avg</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    {metricTab === "breaches" ? (
-                      <div className="flex items-center gap-1 font-bold text-red-500 min-w-[120px] justify-end">
-                        <AlertCircle className="w-4 h-4 text-red-500" />
-                        {user.slaScore} Breaches
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-1 font-bold text-primary min-w-[60px] justify-end">
-                          <Star className="w-4 h-4 fill-primary" />
-                          {user.slaScore}
-                        </div>
-                        <div className={`w-16 text-right font-bold text-sm ${
-                          user.complianceRate >= 90 ? "text-green-500" :
-                          user.complianceRate >= 70 ? "text-yellow-500" :
-                          "text-red-500"
-                        }`}>
-                          {user.complianceRate}%
-                        </div>
-                        <div className="w-12 text-right font-mono text-sm text-muted-foreground">
-                          {user.resolvedCount}
-                        </div>
-                      </>
+                <div key={user.id} className="border-b border-border last:border-0">
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    transition={{ delay: idx * 0.04 }}
+                    onClick={() => metricTab === "breaches" && toggleUserExpand(user.id)}
+                    className={cn(
+                      "px-6 py-4 flex items-center gap-4 hover:bg-muted/30 transition-colors",
+                      metricTab === "breaches" && "cursor-pointer"
                     )}
-                  </div>
-                </motion.div>
+                  >
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${
+                      idx === 0 ? "bg-yellow-400/20 text-yellow-400" :
+                      idx === 1 ? "bg-slate-300/20 text-slate-400" :
+                      idx === 2 ? "bg-amber-700/20 text-amber-600" :
+                      "bg-muted text-muted-foreground"
+                    }`}>
+                      {idx + 1}
+                    </div>
+                    <div className="flex-grow flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary">
+                        {getInitial(user.name)}
+                      </div>
+                      <div>
+                        <div className="font-semibold">{user.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {metricTab === "breaches" ? (
+                            <span>SLA Breaches (Click to expand details)</span>
+                          ) : (
+                            <span>{user.resolvedCount} ticket{user.resolvedCount !== 1 ? "s" : ""} · {user.avgResolutionMinutes}m avg</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      {metricTab === "breaches" ? (
+                        <div className="flex items-center gap-1 font-bold text-red-500 min-w-[120px] justify-end">
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                          {user.slaScore} Breaches
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1 font-bold text-primary min-w-[60px] justify-end">
+                            <Star className="w-4 h-4 fill-primary" />
+                            {user.slaScore}
+                          </div>
+                          <div className={`w-16 text-right font-bold text-sm ${
+                            user.complianceRate >= 90 ? "text-green-500" :
+                            user.complianceRate >= 70 ? "text-yellow-500" :
+                            "text-red-500"
+                          }`}>
+                            {user.complianceRate}%
+                          </div>
+                          <div className="w-12 text-right font-mono text-sm text-muted-foreground">
+                            {user.resolvedCount}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </motion.div>
+                  
+                  {metricTab === "breaches" && expandedUsers[user.id] && (
+                    <div className="px-6 pb-6 pt-2 bg-slate-50/50 border-t border-border/50 space-y-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Breached Tickets Details</h4>
+                      <div className="space-y-3">
+                        {user.details?.map((ticket: any) => (
+                          <div key={ticket.id} className="bg-white border border-border rounded-xl p-4 shadow-sm">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <span className="text-xs font-bold text-slate-800 font-mono">Ticket {ticket.number}</span>
+                                <span className="ml-2 text-[10px] px-2 py-0.5 bg-red-100 text-red-700 font-bold uppercase rounded-full">
+                                  {ticket.slaType} SLA Breached
+                                </span>
+                              </div>
+                              {ticket.breachReasonSubmittedAt ? (
+                                <span className="text-[10px] text-green-600 font-semibold bg-green-50 px-2 py-0.5 rounded-full">
+                                  RCA Submitted
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-full">
+                                  Awaiting RCA
+                                </span>
+                              )}
+                            </div>
+                            
+                            {ticket.breachReasonSubmittedAt ? (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                <div>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Root Cause Analysis</span>
+                                  <p className="text-slate-700 font-medium mt-0.5">{ticket.rootCauseAnalysis}</p>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Dependencies & Blockers</span>
+                                  <p className="text-slate-700 font-medium mt-0.5">{ticket.dependencyDetails || "None"}</p>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Corrective Action Taken</span>
+                                  <p className="text-slate-700 font-medium mt-0.5">{ticket.correctiveActionDetails}</p>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Preventive Action Plan</span>
+                                  <p className="text-slate-700 font-medium mt-0.5">{ticket.preventiveAction}</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-amber-600 font-medium italic mt-2">
+                                Awaiting breach reason submission from owner.
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ))}
             </AnimatePresence>
           </div>

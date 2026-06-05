@@ -16,6 +16,7 @@ function toMs(val: any): number {
 }
 
 import { SLATimer } from "../components/SLATimer";
+import { getEffectiveSlaDelayState } from "../lib/slaDelayUtils";
 
 const PRIORITY_COLORS: Record<string, string> = {
   "1 - Critical": "#ef4444", // Neon Red
@@ -91,6 +92,12 @@ export function Dashboard() {
     : 0;
 
   const activeSLAs = open.filter(t => (t.responseSlaStatus === 'In Progress' || t.resolutionSlaStatus === 'In Progress')).length;
+  const accountabilityStates = open.map((ticket) => ({ ticket, state: getEffectiveSlaDelayState(ticket) }));
+  const above25Sla = accountabilityStates.filter(({ state }) => state.thresholdReached).length;
+  const pendingJustification = accountabilityStates.filter(({ state }) => state.awaitingInitialJustification).length;
+  const awaitingOwnerResponse = accountabilityStates.filter(({ state }) => state.awaitingOwnerResponse).length;
+  const escalatedTickets = accountabilityStates.filter(({ state }) => state.meta.escalationLevel > 0).length;
+  const breachedWithRca = accountabilityStates.filter(({ state }) => state.meta.breachAt || state.awaitingRca).length;
   const nearBreachSLAs = open.filter(t => {
     const respDeadline = t.responseDeadline ? new Date(t.responseDeadline).getTime() : Infinity;
     const resDeadline = t.resolutionDeadline ? new Date(t.resolutionDeadline).getTime() : Infinity;
@@ -121,14 +128,18 @@ export function Dashboard() {
     { label: "Open Incidents", value: openCount, color: "text-foreground dark:text-slate-300", link: "/tickets?filter=open" },
     { label: "Incidents not updated for 7 days", value: stale7, color: "text-foreground dark:text-slate-300", link: "/tickets?filter=stale_7" },
     { label: "Open Incidents older than 30 Days", value: older30, color: "text-foreground dark:text-slate-300", link: "/tickets?filter=older_30" },
+    { label: "Tickets Above 25% SLA", value: above25Sla, color: "text-amber-600 font-bold dark:text-amber-400", link: "/tickets?filter=sla_25" },
+    { label: "Pending Justifications", value: pendingJustification, color: "text-orange-600 font-bold dark:text-orange-400", link: "/tickets?filter=sla_justification" },
+    { label: "Awaiting Owner Response", value: awaitingOwnerResponse, color: "text-yellow-600 font-bold dark:text-yellow-400", link: "/tickets?filter=sla_owner_response" },
+    { label: "Escalated Tickets", value: escalatedTickets, color: "text-red-600 font-bold dark:text-red-400", link: "/tickets?filter=sla_escalated" },
+    { label: "SLA Breached / RCA", value: breachedWithRca, color: "text-rose-600 font-black dark:text-rose-400", link: "/tickets?filter=sla_breached_rca" },
   ];
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto font-outfit">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-5">
         <div>
-          <h1 className="text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent tracking-tight">
+          <h1 className="text-3xl font-black text-blue-600 dark:text-blue-400 tracking-tight">
             Security Control Center
           </h1>
           <p className="text-xs text-muted-foreground mt-1">Real-time incident streams, executive indicators & global performance telemetry.</p>
@@ -146,8 +157,8 @@ export function Dashboard() {
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs font-bold transition-all cursor-pointer",
               layout === 'compact'
-                ? "bg-cyan-500/15 border-cyan-500/25 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                : "border-border/60 hover:border-purple-500/30 hover:bg-white/5 text-foreground"
+                ? "bg-blue-500/10 border-blue-500/20 text-blue-500 dark:text-blue-400 shadow-[0_0_10px_rgba(37,99,235,0.15)]"
+                : "border-border/60 hover:border-blue-500/30 hover:bg-white/5 text-foreground"
             )}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -166,7 +177,7 @@ export function Dashboard() {
         )}>
           <div className={cn("grid divide-border/40", layout === 'compact' ? "grid-cols-1 divide-y" : "grid-cols-3 divide-x")}>
             {statCards.slice(0, 3).map((s, i) => (
-              <Link key={i} to={s.link} className={cn("p-6 text-center hover:bg-cyan-500/5 transition-colors group", layout === 'compact' && "p-4")}>
+              <Link key={i} to={s.link} className={cn("p-6 text-center hover:bg-blue-500/5 transition-colors group", layout === 'compact' && "p-4")}>
                 <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-2.5 font-outfit">{s.label}</div>
                 <div className={cn("font-orbitron font-bold transition-transform inline-block", s.color, layout === 'compact' ? "text-3xl" : "text-4xl")}>
                   {loading ? "—" : s.value}
@@ -176,11 +187,23 @@ export function Dashboard() {
           </div>
           <div className={cn("grid divide-border/40 border-t border-border/40", layout === 'compact' ? "grid-cols-1 divide-y" : "grid-cols-3 divide-x")}>
             {statCards.slice(3, 6).map((s, i) => (
-              <Link key={i} to={s.link} className={cn("p-6 text-center hover:bg-cyan-500/5 transition-colors group", layout === 'compact' && "p-4")}>
+              <Link key={i} to={s.link} className={cn("p-6 text-center hover:bg-blue-500/5 transition-colors group", layout === 'compact' && "p-4")}>
                 <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-2.5 font-outfit">{s.label}</div>
                 <div className={cn("font-orbitron font-bold transition-transform inline-block", s.color, layout === 'compact' ? "text-3xl" : "text-4xl")}>
                   {loading ? "—" : s.value}
                 </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="glass-panel rounded-2xl border border-border/80 p-5 shadow-2xl">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-foreground font-outfit mb-4">SLA Accountability</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {statCards.slice(6).map((s, i) => (
+              <Link key={`sla-card-${i}`} to={s.link} className="rounded-xl border border-border/60 bg-card/50 px-4 py-5 hover:bg-amber-500/5 transition-colors">
+                <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-2">{s.label}</div>
+                <div className={cn("font-orbitron font-bold text-3xl", s.color)}>{loading ? "—" : s.value}</div>
               </Link>
             ))}
           </div>
@@ -263,7 +286,7 @@ export function Dashboard() {
           { label: "Near Breach", value: slaStats.nearBreach, color: "text-amber-500 dark:text-amber-400", icon: AlertCircle }
         ].map((s, i) => (
           <div key={i} className="glass-panel border border-border/80 rounded-2xl p-4 shadow-xl flex items-center gap-4 group hover:border-cyan-500/30 transition-all hover:shadow-2xl">
-            <div className="p-2.5 rounded-xl bg-black/20 group-hover:bg-black/35 border border-white/5 transition-colors">
+            <div className="p-2.5 rounded-xl bg-muted/30 dark:bg-black/20 group-hover:bg-muted/50 dark:group-hover:bg-black/35 border border-border/30 dark:border-white/5 transition-colors">
               <s.icon className={cn("w-4 h-4", s.color)} />
             </div>
             <div>
@@ -278,7 +301,7 @@ export function Dashboard() {
       <div className="glass-panel rounded-2xl border border-border/80 shadow-2xl overflow-hidden bg-card/60 backdrop-blur-md">
         <div className="p-4 border-b border-border/40 flex items-center justify-between bg-muted/20 backdrop-blur-md">
           <h3 className="text-xs font-black uppercase tracking-wider text-foreground font-outfit">Operations Incident Feed</h3>
-          <Link to="/tickets" className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold uppercase tracking-widest font-outfit">View All Incidents</Link>
+          <Link to="/tickets" className="text-[10px] text-blue-500 dark:text-blue-400 hover:underline font-bold uppercase tracking-widest font-outfit">View All Incidents</Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -308,9 +331,9 @@ export function Dashboard() {
                 const isPaused = t.status === "On Hold" || t.status === "Waiting for Customer";
 
                 return (
-                  <tr key={t.id} className="hover:bg-cyan-500/5 transition-colors">
+                  <tr key={t.id} className="hover:bg-blue-500/5 transition-colors">
                     <td className="p-3">
-                      <Link to={`/tickets/${t.id}`} className="font-mono text-xs font-bold text-cyan-400 hover:underline bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
+                      <Link to={`/tickets/${t.id}`} className="font-mono text-xs font-bold text-blue-500 dark:text-blue-400 hover:underline bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">
                         {t.number ?? t.id.slice(0, 8)}
                       </Link>
                     </td>
@@ -326,7 +349,7 @@ export function Dashboard() {
                       {t.assignedToName || users.find(u => u.id === t.assignedTo)?.name || t.assignedTo || "Unassigned"}
                     </td>
                     <td className="p-3">
-                      <div className="flex flex-col gap-1 bg-black/10 p-1.5 rounded-lg border border-white/5 max-w-[130px]">
+                      <div className="flex flex-col gap-1 bg-muted/20 dark:bg-black/10 p-1.5 rounded-lg border border-border/30 dark:border-white/5 max-w-[130px]">
                         <SLATimer
                           label="Resp"
                           deadline={t.responseDeadline}

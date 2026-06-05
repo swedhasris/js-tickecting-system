@@ -354,15 +354,15 @@ export function AccessControl() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
           <Users className="w-8 h-8 text-sn-dark opacity-70" />
           <div><div className="text-2xl font-bold text-sn-dark">{users.length}</div><div className="text-xs text-muted-foreground">Total Users</div></div>
         </div>
-        <div className="bg-white border border-green-200 rounded-xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-green-200 dark:border-green-900 rounded-xl p-4 flex items-center gap-3">
           <ShieldCheck className="w-8 h-8 text-green-600 opacity-70" />
           <div><div className="text-2xl font-bold text-green-600">{activeCount}</div><div className="text-xs text-muted-foreground">Active</div></div>
         </div>
-        <div className="bg-white border border-red-200 rounded-xl p-4 flex items-center gap-3">
+        <div className="bg-card border border-red-200 dark:border-red-900 rounded-xl p-4 flex items-center gap-3">
           <ShieldOff className="w-8 h-8 text-red-600 opacity-70" />
           <div><div className="text-2xl font-bold text-red-600">{disabledCount}</div><div className="text-xs text-muted-foreground">Disabled</div></div>
         </div>
@@ -403,7 +403,7 @@ export function AccessControl() {
 
       {/* ── TAB 1: Account Access ── */}
       {activeTab === "access" && (
-        <div className="bg-white border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="p-4 border-b border-border bg-muted/10 flex items-center justify-between">
             <span className="text-sm font-bold">Account Access Control</span>
             <span className="text-xs text-muted-foreground">Toggle to grant or remove login access</span>
@@ -520,7 +520,7 @@ export function AccessControl() {
             const restricted: string[] = u.restrictedModules || [];
 
             return (
-              <div key={u.id} className="bg-white border border-border rounded-xl shadow-sm overflow-hidden">
+              <div key={u.id} className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
                 {/* User row — click to expand */}
                 <button className="w-full flex items-center gap-4 p-4 hover:bg-muted/5 transition-colors text-left"
                   onClick={() => setExpandedUser(isExpanded ? null : u.id)}>
@@ -616,7 +616,7 @@ export function AccessControl() {
       {/* ── Add Login Modal ── */}
       {activeTab === "company_features" && (
         <div className="space-y-4">
-          <div className="bg-white border border-border rounded-xl shadow-sm">
+          <div className="bg-card border border-border rounded-xl shadow-sm">
             <div className="p-4 border-b border-border flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div>
                 <h2 className="text-sm font-bold text-sn-dark">Create New Incident Feature Access</h2>
@@ -788,7 +788,7 @@ export function AccessControl() {
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={e => e.target === e.currentTarget && setShowCreate(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b border-border bg-sn-dark text-white">
               <div className="flex items-center gap-3">
                 <UserPlus className="w-5 h-5 text-sn-green" />

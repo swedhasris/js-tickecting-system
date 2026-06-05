@@ -9,6 +9,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { useServiceCatalog } from "../lib/serviceCatalog";
 import { calculateSLADeadline } from "../lib/slaUtils";
 import { createSpeechController } from "../lib/speechToEnglish";
+import { getEffectiveSlaDelayState } from "../lib/slaDelayUtils";
 
 import { Link, useSearchParams } from "react-router-dom";
 import { IT_SERVICE_CATALOG } from "../lib/itServiceCatalogDefaults";
@@ -301,6 +302,12 @@ export function Tickets() {
     if (filter === "overdue" && (t.status === "Resolved" || t.status === "Closed" || t.status === "Canceled" || !t.resolutionDeadline || new Date(t.resolutionDeadline).getTime() > now)) return false;
     if (filter === "stale_7" && (t.status === "Resolved" || t.status === "Closed" || t.status === "Canceled" || getTs(t) >= sevenDaysAgo)) return false;
     if (filter === "older_30" && (t.status === "Resolved" || t.status === "Closed" || t.status === "Canceled" || getTs(t) >= thirtyDaysAgo)) return false;
+    const slaDelayState = getEffectiveSlaDelayState(t);
+    if (filter === "sla_25" && !slaDelayState.thresholdReached) return false;
+    if (filter === "sla_justification" && !slaDelayState.awaitingInitialJustification) return false;
+    if (filter === "sla_owner_response" && !slaDelayState.awaitingOwnerResponse) return false;
+    if (filter === "sla_escalated" && !(slaDelayState.meta.escalationLevel > 0)) return false;
+    if (filter === "sla_breached_rca" && !(slaDelayState.meta.breachAt || slaDelayState.awaitingRca)) return false;
 
     // Column-level search filters (case-insensitive)
     const matches = (val: string, filterVal: string) => !filterVal || (val || "").toLowerCase().includes(filterVal.toLowerCase());
@@ -509,6 +516,8 @@ export function Tickets() {
         responseSlaStatus,
         resolutionSlaStatus: "Pending",
         slaResolutionHours: matchingPolicy.resolutionTimeHours || 24,
+        slaDelayMeta: null,
+        slaDelayLogs: [],
         totalPausedTime: 0,
         history: [{ action: "Ticket Created (Response SLA Started)", timestamp: now.toISOString(), user: profile?.name || user.email }]
       };
@@ -688,7 +697,7 @@ export function Tickets() {
       {/* Workspace Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-5">
         <div>
-          <h1 className="text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent tracking-tight">
+          <h1 className="text-3xl font-black text-blue-600 dark:text-blue-400 tracking-tight">
             Security Control Workspace
           </h1>
           <p className="text-xs text-muted-foreground mt-1">Real-time incident streams & service request orchestration.</p>
@@ -701,7 +710,7 @@ export function Tickets() {
               className={cn(
                 "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
                 viewMode === 'hybrid'
-                  ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                  ? "bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20 shadow-[0_0_10px_rgba(37,99,235,0.15)]"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -712,7 +721,7 @@ export function Tickets() {
               className={cn(
                 "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
                 viewMode === 'table'
-                  ? "bg-purple-500/15 text-purple-400 border border-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.15)]"
+                  ? "bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-900/30 shadow-[0_0_10px_rgba(37,99,235,0.15)]"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -720,7 +729,7 @@ export function Tickets() {
             </button>
           </div>
 
-          <Button onClick={() => openModal()} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer">
+          <Button onClick={() => openModal()} className="bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] cursor-pointer">
             <Plus className="w-4 h-4 mr-2" /> Launch Incident
           </Button>
         </div>
@@ -736,7 +745,7 @@ export function Tickets() {
               placeholder="Search description..."
               value={columnFilters.title}
               onChange={e => setColumnFilters({ ...columnFilters, title: e.target.value })}
-              className="pl-9 pr-4 py-2 bg-background/50 border border-border/80 rounded-xl text-xs w-full focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-400 outline-none transition-all"
+              className="pl-9 pr-4 py-2 bg-background/50 border border-border/80 rounded-xl text-xs w-full focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition-all"
             />
           </div>
           <Button
@@ -745,7 +754,7 @@ export function Tickets() {
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
               "rounded-xl cursor-pointer text-xs font-bold transition-all shrink-0",
-              showFilters ? "bg-cyan-500/10 border-cyan-500 text-cyan-400" : ""
+              showFilters ? "bg-blue-500/10 border-blue-500 text-blue-500 dark:text-blue-400" : ""
             )}
           >
             <Filter className="w-3.5 h-3.5 mr-2" /> Advanced Filter
@@ -759,7 +768,7 @@ export function Tickets() {
         "glass-panel rounded-2xl p-5 border border-border/80 transition-all duration-300 shadow-lg",
         showFilters ? "block animate-in slide-in-from-top duration-200" : "hidden"
       )}>
-        <h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-400 mb-3.5">Workspace Filters</h3>
+        <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 mb-3.5">Workspace Filters</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
           <div className="space-y-1">
             <label className="text-muted-foreground font-semibold">Incident ID</label>
@@ -802,7 +811,7 @@ export function Tickets() {
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button size="sm" variant="outline" onClick={() => setColumnFilters({ number: "", title: "", caller: "", priority: "", status: "", category: "", assignmentGroup: "", assignedTo: "" })} className="rounded-xl">Reset Filters</Button>
-          <Button size="sm" onClick={() => setShowFilters(false)} className="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-bold rounded-xl">Apply</Button>
+          <Button size="sm" onClick={() => setShowFilters(false)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl">Apply</Button>
         </div>
       </div>
 
@@ -819,17 +828,17 @@ export function Tickets() {
               const p = ticket.priority ?? "4 - Low";
               const priorityClass = p.includes("Critical") ? "priority-glow-critical border-l-4 border-l-red-500" :
                 p.includes("High") ? "priority-glow-high border-l-4 border-l-orange-500" :
-                  p.includes("Moderate") ? "priority-glow-moderate border-l-4 border-l-emerald-500" : "priority-glow-low border-l-4 border-l-cyan-500";
+                  p.includes("Moderate") ? "priority-glow-moderate border-l-4 border-l-emerald-500" : "priority-glow-low border-l-4 border-l-blue-500";
               const priorityBadge = p.includes("Critical") ? "bg-red-500/10 text-red-500 border border-red-500/20" :
                 p.includes("High") ? "bg-orange-500/10 text-orange-500 border border-orange-500/20" :
                   p.includes("Moderate") ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
-                    "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20";
+                    "bg-blue-500/10 text-blue-500 border border-blue-500/20";
 
               return (
-                <div key={ticket.id} className={cn("glass-panel rounded-2xl p-5 flex flex-col justify-between border border-border/80 shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-cyan-500/30 group", priorityClass)}>
+                <div key={ticket.id} className={cn("glass-panel rounded-2xl p-5 flex flex-col justify-between border border-border/80 shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-blue-500/30 group", priorityClass)}>
                   <div>
                     <div className="flex items-center justify-between mb-3.5">
-                      <Link to={`/tickets/${ticket.id}`} className="font-mono text-[10px] font-black uppercase tracking-wider bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-500 px-2 py-0.5 rounded border border-cyan-500/20 hover:underline">
+                      <Link to={`/tickets/${ticket.id}`} className="font-mono text-[10px] font-black uppercase tracking-wider bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 px-2 py-0.5 rounded border border-blue-500/20 hover:underline">
                         {ticket.number || `INC000${idx + 1}`}
                       </Link>
                       <span className={cn("text-[9px] uppercase tracking-widest font-black px-2 py-0.5 rounded-lg", priorityBadge)}>
@@ -837,25 +846,26 @@ export function Tickets() {
                       </span>
                     </div>
 
-                    <h4 className="font-outfit font-bold text-sm text-foreground line-clamp-2 mb-2 group-hover:text-cyan-400 transition-colors" title={ticket.title}>
+                    <h4 className="font-outfit font-bold text-sm text-foreground line-clamp-2 mb-2 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors" title={ticket.title}>
                       {ticket.title}
                     </h4>
 
-                    <div className="text-[10px] text-muted-foreground space-y-1.5 my-3 bg-black/10 p-2.5 rounded-xl border border-white/5">
-                      <div className="flex justify-between"><span className="font-semibold uppercase tracking-wider text-white/50 text-[8px]">Reporting User:</span> <span className="text-white/80 font-medium truncate max-w-[150px]">{ticket.caller}</span></div>
+                    <div className="text-[10px] text-muted-foreground space-y-1.5 my-3 bg-muted/30 dark:bg-black/10 p-2.5 rounded-xl border border-border/30 dark:border-white/5">
+                      <div className="flex justify-between"><span className="font-semibold uppercase tracking-wider text-muted-foreground text-[8px]">Reporting User:</span> <span className="text-foreground font-medium truncate max-w-[150px]">{ticket.caller}</span></div>
                       <div className="flex justify-between">
-                        <span className="font-semibold uppercase tracking-wider text-white/50 text-[8px]">Category:</span>
-                        <span className="text-white/80 font-medium flex items-center gap-1">
+                        <span className="font-semibold uppercase tracking-wider text-muted-foreground text-[8px]">Category:</span>
+                        <span className="text-foreground font-medium flex items-center gap-1">
                           📌 {ticket.category || ticket.incidentCategory || ticket.incident_category}
                         </span>
                       </div>
-                      <div className="flex justify-between"><span className="font-semibold uppercase tracking-wider text-white/50 text-[8px]">Group:</span> <span className="text-white/80 font-medium truncate max-w-[150px]">{ticket.assignmentGroup || "(empty)"}</span></div>
+                      <div className="flex justify-between"><span className="font-semibold uppercase tracking-wider text-muted-foreground text-[8px]">Group:</span> <span className="text-foreground font-medium truncate max-w-[150px]">{ticket.assignmentGroup || "(empty)"}</span></div>
                     </div>
+
                   </div>
 
                   <div className="space-y-3.5 mt-2 border-t border-border/40 pt-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-col gap-1 w-full bg-black/15 p-2 rounded-xl border border-white/5">
+                      <div className="flex flex-col gap-1 w-full bg-muted/20 dark:bg-black/15 p-2 rounded-xl border border-border/30 dark:border-white/5">
                         <SLATimer
                           label="Resp"
                           deadline={ticket.responseDeadline}
@@ -880,7 +890,7 @@ export function Tickets() {
 
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-500 dark:text-blue-400 text-[10px] font-bold flex items-center justify-center">
                           {(assignedAgent?.name || ticket.assignedToName || "U")[0].toUpperCase()}
                         </div>
                         <span className="text-[10px] text-muted-foreground truncate max-w-[110px]" title={assignedAgent?.name || ticket.assignedToName || ticket.assignedTo || "Unassigned"}>
@@ -889,7 +899,7 @@ export function Tickets() {
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-                        <Link to={`/tickets/${ticket.id}`} className="p-1.5 text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-colors border border-transparent hover:border-cyan-500/20" title="Edit Ticket">
+                        <Link to={`/tickets/${ticket.id}`} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors border border-transparent hover:border-blue-500/20" title="Edit Ticket">
                           <Edit className="w-3.5 h-3.5" />
                         </Link>
                         <button onClick={async (e) => {
@@ -938,11 +948,11 @@ export function Tickets() {
                   const priorityBadge = p.includes("Critical") ? "bg-red-500/10 text-red-500 border border-red-500/20" :
                     p.includes("High") ? "bg-orange-500/10 text-orange-500 border border-orange-500/20" :
                       p.includes("Moderate") ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
-                        "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20";
+                        "bg-blue-500/10 text-blue-500 border border-blue-500/20";
                   return (
-                    <tr key={ticket.id} className="hover:bg-cyan-500/5 transition-colors font-outfit">
+                    <tr key={ticket.id} className="hover:bg-blue-500/5 transition-colors font-outfit">
                       <td className="p-3">
-                        <Link to={`/tickets/${ticket.id}`} className="font-mono text-xs font-bold text-cyan-400 hover:underline">
+                        <Link to={`/tickets/${ticket.id}`} className="font-mono text-xs font-bold text-blue-500 dark:text-blue-400 hover:underline">
                           {ticket.number || `INC000${idx + 1}`}
                         </Link>
                       </td>
@@ -984,7 +994,7 @@ export function Tickets() {
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Link to={`/tickets/${ticket.id}`} className="p-1.5 text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-colors" title="Edit Ticket">
+                          <Link to={`/tickets/${ticket.id}`} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Edit Ticket">
                             <Edit className="w-3.5 h-3.5" />
                           </Link>
                           <button onClick={async () => {
@@ -1008,10 +1018,10 @@ export function Tickets() {
       {/* Create Ticket Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-          <div className="bg-[#090a15]/90 backdrop-blur-xl border border-cyan-500/20 text-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200 shadow-[0_15px_50px_rgba(0,0,0,0.5)]">
+          <div className="bg-[#090a15]/90 backdrop-blur-xl border border-blue-500/20 text-foreground bg-card rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200 shadow-[0_15px_50px_rgba(0,0,0,0.5)]">
             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black/20 font-outfit">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-400/10 border border-cyan-400/20 px-2.5 py-1 rounded-full">New Incident Feed</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-full">New Incident Feed</span>
               </div>
               <div className="flex items-center gap-2">
                 {isFeatureVisible("button.cancel") && (
@@ -1028,7 +1038,7 @@ export function Tickets() {
                 {isFeatureVisible("button.submit") && (
                   <Button
                     size="sm"
-                    className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl shadow-[0_0_12px_rgba(6,182,212,0.3)] transition-all cursor-pointer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl shadow-[0_0_12px_rgba(37,99,235,0.3)] transition-all cursor-pointer"
                     onClick={(e: any) => handleCreateTicket(e)}
                     disabled={isSubmitting || isFeatureDisabled("button.submit")}
                   >

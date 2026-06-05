@@ -8,6 +8,7 @@ export const auth = getAuth(app);
 
 // Use initializeFirestore without long polling for optimal performance
 export const db = initializeFirestore(app, {}, (firebaseConfig as any).firestoreDatabaseId);
+export const firebaseAvailable = true;
 
 // Proactive connection test as recommended for AI Studio environment
 async function testConnection() {

@@ -212,7 +212,7 @@ export function Sidebar() {
                 {branding.companyName.charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="text-xl font-bold tracking-tight">{branding.companyName}</span>
+            <span className="text-xl font-bold tracking-tight text-blue-600 dark:text-blue-400">{branding.companyName}</span>
           </div>
         )}
         <button

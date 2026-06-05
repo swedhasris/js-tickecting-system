@@ -1,7 +1,8 @@
 import * as realFS from "@firebase/firestore";
+import { parseSlaDelayLogs, parseSlaDelayMeta } from "./slaDelayUtils";
 
 // Global flag to track if Firestore is exhausted
-let firestoreExhausted = false;
+let firestoreExhausted = true;
 
 export function isFirestoreExhausted() {
   return firestoreExhausted;
@@ -9,6 +10,32 @@ export function isFirestoreExhausted() {
 
 export function setFirestoreExhausted(val: boolean) {
   firestoreExhausted = val;
+}
+
+interface FallbackListener {
+  queryOrDoc: any;
+  onNext: (snapshot: any) => void;
+  active: () => boolean;
+  trigger: () => void;
+}
+
+const activeListeners: FallbackListener[] = [];
+
+function notifyListeners(path: string, id?: string) {
+  activeListeners.forEach(listener => {
+    if (!listener.active()) return;
+    const lDoc = listener.queryOrDoc;
+    if (lDoc && lDoc.type === "document") {
+      if (lDoc.path === path && (!id || lDoc.id === id)) {
+        listener.trigger();
+      }
+    } else if (lDoc && (lDoc.type === "collection" || lDoc.type === "query")) {
+      const collPath = lDoc.type === "query" ? lDoc.collectionRef.path : lDoc.path;
+      if (collPath === path) {
+        listener.trigger();
+      }
+    }
+  });
 }
 
 // Fallback Objects for query building
@@ -68,6 +95,8 @@ function mapDbTicketToFrontend(t: any): any {
     totalPausedTime: t.total_paused_time ?? t.totalPausedTime ?? 0,
     onHoldStart: t.on_hold_start || t.onHoldStart || null,
     points: t.points ?? 0,
+    slaDelayMeta: parseSlaDelayMeta(t.sla_delay_meta_json || t.slaDelayMeta),
+    slaDelayLogs: parseSlaDelayLogs(t.sla_delay_logs_json || t.slaDelayLogs),
     createdAt: t.created_at || t.createdAt || null,
     updatedAt: t.updated_at || t.updatedAt || null,
   };
@@ -275,17 +304,32 @@ export async function getDocs(queryObj: any): Promise<any> {
 
 export async function getDoc(docRef: any): Promise<any> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
-    const path = docRef.path;
-    const id = docRef.id;
+    let path = docRef.path;
+    let id = docRef.id;
+    if (path && path.includes("/")) {
+      const parts = path.split("/");
+      id = parts[parts.length - 1];
+      path = parts.slice(0, -1).join("/");
+    }
     let data: any = null;
     
     try {
       if (path === "settings" && id === "branding") {
-        data = {
-          companyName: "Connect",
-          logoBase64: null,
-          logoType: null
-        };
+        const stored = localStorage.getItem("fallback_firestore_settings/branding");
+        if (stored) {
+          try {
+            data = JSON.parse(stored);
+          } catch (e) {
+            console.error("[Firestore Fallback] Error parsing branding from localStorage:", e);
+          }
+        }
+        if (!data) {
+          data = {
+            companyName: "Connect",
+            logoBase64: null,
+            logoType: null
+          };
+        }
       } else if (path === "tickets") {
         const res = await fetch(`/api/tickets/${id}`);
         if (res.ok) {
@@ -350,9 +394,19 @@ export function onSnapshot(
     runPoll();
     timerId = setInterval(runPoll, 5000);
     
+    const listenerRecord = {
+      queryOrDoc,
+      onNext,
+      active: () => active,
+      trigger: runPoll
+    };
+    activeListeners.push(listenerRecord);
+    
     return () => {
       active = false;
       if (timerId) clearInterval(timerId);
+      const idx = activeListeners.indexOf(listenerRecord);
+      if (idx !== -1) activeListeners.splice(idx, 1);
     };
   }
   
@@ -406,7 +460,9 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
           assignedToName: data.assignedToName || null,
           createdBy: data.createdBy,
           createdByName: data.createdByName || data.caller || "System",
-          customFields: data.customFields || {}
+          customFields: data.customFields || {},
+          slaDelayMeta: data.slaDelayMeta || null,
+          slaDelayLogs: data.slaDelayLogs || []
         })
       });
       if (!res.ok) throw new Error("Failed to create ticket via fallback API");
@@ -430,15 +486,29 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
 
 export async function updateDoc(docRef: any, data: any): Promise<void> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
-    const path = docRef.path;
-    const id = docRef.id;
+    let path = docRef.path;
+    let id = docRef.id;
+    if (path && path.includes("/")) {
+      const parts = path.split("/");
+      id = parts[parts.length - 1];
+      path = parts.slice(0, -1).join("/");
+    }
     console.log(`[Firestore Fallback] updateDoc on "${path}/${id}":`, data);
     
     if (path === "tickets") {
+      const payload = { ...data };
+      if (payload.slaDelayMeta !== undefined) {
+        payload.sla_delay_meta_json = payload.slaDelayMeta;
+        delete payload.slaDelayMeta;
+      }
+      if (payload.slaDelayLogs !== undefined) {
+        payload.sla_delay_logs_json = payload.slaDelayLogs;
+        delete payload.slaDelayLogs;
+      }
       const res = await fetch(`/api/tickets/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error("Failed to update ticket via fallback API");
       return;
@@ -459,8 +529,13 @@ export async function updateDoc(docRef: any, data: any): Promise<void> {
 
 export async function setDoc(docRef: any, data: any, options?: any): Promise<void> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
-    const path = docRef.path;
-    const id = docRef.id;
+    let path = docRef.path;
+    let id = docRef.id;
+    if (path && path.includes("/")) {
+      const parts = path.split("/");
+      id = parts[parts.length - 1];
+      path = parts.slice(0, -1).join("/");
+    }
     console.log(`[Firestore Fallback] setDoc on "${path}/${id}":`, data, options);
     
     if (path === "users") {
@@ -469,6 +544,17 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
       });
+    } else if (path === "settings" && id === "branding") {
+      const stored = localStorage.getItem("fallback_firestore_settings/branding");
+      let currentData = { companyName: "Connect", logoBase64: null, logoType: null };
+      if (stored) {
+        try {
+          currentData = JSON.parse(stored);
+        } catch {}
+      }
+      const newData = { ...currentData, ...data };
+      localStorage.setItem("fallback_firestore_settings/branding", JSON.stringify(newData));
+      notifyListeners("settings", "branding");
     }
     return;
   }
@@ -486,8 +572,13 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
 
 export async function deleteDoc(docRef: any): Promise<void> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
-    const path = docRef.path;
-    const id = docRef.id;
+    let path = docRef.path;
+    let id = docRef.id;
+    if (path && path.includes("/")) {
+      const parts = path.split("/");
+      id = parts[parts.length - 1];
+      path = parts.slice(0, -1).join("/");
+    }
     console.log(`[Firestore Fallback] deleteDoc on "${path}/${id}"`);
     
     if (path === "tickets") {
