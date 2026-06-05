@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { collection, query, onSnapshot, where } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { Link } from "react-router-dom";
 import AnalyticsCard from "../components/AnalyticsCard";
@@ -8,40 +9,7 @@ import RecentActivityList from "../components/RecentActivityList";
 import MyTasksList from "../components/MyTasksList";
 import QuickActions from "../components/QuickActions";
 import { db } from "../lib/firebase";
-import { collection, query, onSnapshot, where } from "firebase/firestore";
-
-const MOCK_DATA = {
-  cards: { totalAssigned: 0, totalCreated: 0, open: 0, inProgress: 0, resolved: 0, closed: 0, pending: 0, overdue: 0 },
-  performance: { completionPercentage: "0%", avgResolutionTime: "N/A", ticketsToday: 0, weekly: "0", monthly: "0", productivityScore: 100 },
-  charts: {
-    statusDistribution: [
-      { name: "Open", value: 1, color: "#3b82f6" }
-    ],
-    categoryDistribution: [
-      { name: "General Support", value: 1, color: "#3b82f6" }
-    ],
-    trend: [
-      { name: "Mon", tickets: 0 },
-      { name: "Tue", tickets: 0 },
-      { name: "Wed", tickets: 0 },
-      { name: "Thu", tickets: 0 },
-      { name: "Fri", tickets: 0 },
-      { name: "Sat", tickets: 0 },
-      { name: "Sun", tickets: 0 }
-    ],
-    productivity: [
-      { name: "Mon", score: 50 },
-      { name: "Tue", score: 50 },
-      { name: "Wed", score: 50 },
-      { name: "Thu", score: 50 },
-      { name: "Fri", score: 50 },
-      { name: "Sat", score: 50 },
-      { name: "Sun", score: 50 }
-    ]
-  },
-  recentActivity: [],
-  myTasks: []
-};
+import { validateTicket, computeSla, dedupeTickets, auditLog, toDate, isBleachedTicket } from "../lib/dashboardUtils";
 
 export function MyDashboard() {
   const { user } = useAuth();
@@ -70,63 +38,66 @@ export function MyDashboard() {
     const q = query(ticketsRef);
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      // Process tickets using dashboard utilities
+      const rawTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
 
-      // Helper to convert Firestore Timestamp / date string / number to Date object
-      const toDate = (val: any): Date | null => {
-        if (!val) return null;
-        if (typeof val === 'object' && val.seconds !== undefined) return new Date(val.seconds * 1000);
-        if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? null : d;
-      };
-
-      // Filter tickets related to the active user (assigned to them or created by them)
-      const userTickets = allTickets.filter(t =>
-  t.assignedTo === user.uid || t.assigned_to === user.uid || t.assigned_user === user.uid ||
-  t.createdBy === user.uid || t.created_by === user.uid
-);
-      const assigned = allTickets.filter(t =>
-        t.assignedTo === user.uid || t.assigned_to === user.uid || t.assigned_user === user.uid);
-      const created = allTickets.filter(t =>
-        t.createdBy === user.uid || t.created_by === user.uid);
-
-      // Compute status counts
-      const open = userTickets.filter(t => t.status === "New" || t.status === "Open").length;
-      const inProgress = userTickets.filter(t => t.status === "In Progress").length;
-      const resolved = userTickets.filter(t => t.status === "Resolved").length;
-      const closed = userTickets.filter(t => t.status === "Closed").length;
-      const pending = userTickets.filter(t => t.status === "Pending" || t.status === "On Hold").length;
-
-      const overdue = userTickets.filter(t => {
-        if (t.status === "Resolved" || t.status === "Closed") return false;
-        // Mark Critical priority or breached resolution SLA as overdue
-        if (t.priority?.includes("Critical")) return true;
-
-        // Also check if resolution deadline exists and is in the past
-        if (t.resolutionDeadline) {
-          const deadline = toDate(t.resolutionDeadline);
-          if (deadline && deadline.getTime() < Date.now()) return true;
+      // Validate and filter tickets for current user
+      const validated = rawTickets.map(t => {
+        const validation = validateTicket(t, user.uid);
+        if (!validation.valid) {
+          auditLog(user.uid, t, 'Invalid Ticket', validation.errors.join('; '));
         }
-        return false;
-      }).length;
+        return { ticket: t, validation };
+      });
+
+      // Keep only valid tickets belonging to the user
+      const userTickets = validated
+        .filter(v => v.validation.valid && !isBleachedTicket(v.ticket))
+        .map(v => v.ticket);
+
+      // Deduplicate tickets
+      const dedupedTickets = dedupeTickets(userTickets);
+
+      // Compute SLA and overdue info for each ticket
+      const ticketsWithSla = dedupedTickets.map(t => ({
+        ...t,
+        ...computeSla(t)
+      }));
+
+      // Separate assigned and created tickets for metrics
+      const assigned = ticketsWithSla.filter(t =>
+        t.assignedTo === user.uid || t.assigned_to === user.uid || t.assigned_user === user.uid
+      );
+      const created = ticketsWithSla.filter(t =>
+        t.createdBy === user.uid || t.created_by === user.uid
+      );
+
+      // Compute status counts using SLA breach flag
+      const open = ticketsWithSla.filter(t => t.status === "New" || t.status === "Open").length;
+      const inProgress = ticketsWithSla.filter(t => t.status === "In Progress").length;
+      const resolved = ticketsWithSla.filter(t => t.status === "Resolved").length;
+      const closed = ticketsWithSla.filter(t => t.status === "Closed").length;
+      const pending = ticketsWithSla.filter(t => t.status === "Pending" || t.status === "On Hold").length;
+      const overdue = ticketsWithSla.filter(t => t.breached).length;
 
       // Completion stats
-      const totalCount = userTickets.length;
+      const totalCount = ticketsWithSla.length;
       const completedCount = resolved + closed;
       const completionPercentage = totalCount > 0 ? `${Math.round((completedCount / totalCount) * 100)}%` : "0%";
 
-      // Calculate avg resolution time
+      // Average resolution time (using SLA values if available)
       let totalResMins = 0;
       let resolvedTicketsCount = 0;
-      userTickets.forEach(t => {
-        const cDate = toDate(t.createdAt);
-        const rDate = toDate(t.resolvedAt);
-        if (cDate && rDate) {
-          const diff = rDate.getTime() - cDate.getTime();
-          if (diff > 0) {
-            totalResMins += diff / (1000 * 60 * 60);
-            resolvedTicketsCount++;
+      ticketsWithSla.forEach(t => {
+        if (t.resolvedAt && t.createdAt) {
+          const cDate = toDate(t.createdAt);
+          const rDate = toDate(t.resolvedAt);
+          if (cDate && rDate) {
+            const diff = rDate.getTime() - cDate.getTime();
+            if (diff > 0) {
+              totalResMins += diff / (1000 * 60 * 60);
+              resolvedTicketsCount++;
+            }
           }
         }
       });
@@ -134,10 +105,10 @@ export function MyDashboard() {
         ? `${(totalResMins / resolvedTicketsCount).toFixed(1)}h`
         : "N/A";
 
-      // Completed today
+      // Tickets completed today
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const ticketsToday = userTickets.filter(t => {
+      const ticketsToday = ticketsWithSla.filter(t => {
         const rDate = toDate(t.resolvedAt);
         return rDate && rDate.getTime() >= todayStart.getTime();
       }).length;
@@ -145,11 +116,11 @@ export function MyDashboard() {
       // Weekly / Monthly stats
       const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const oneMonthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      const weekly = userTickets.filter(t => {
+      const weekly = ticketsWithSla.filter(t => {
         const cDate = toDate(t.createdAt);
         return cDate && cDate.getTime() >= oneWeekAgo;
       }).length.toString();
-      const monthly = userTickets.filter(t => {
+      const monthly = ticketsWithSla.filter(t => {
         const cDate = toDate(t.createdAt);
         return cDate && cDate.getTime() >= oneMonthAgo;
       }).length.toString();
@@ -159,7 +130,7 @@ export function MyDashboard() {
         ? Math.min(100, Math.round((completedCount / totalCount) * 80 + 20))
         : 100;
 
-      // Status distribution array
+      // Status distribution for charts
       const statusDistribution = [
         { name: "Open", value: open, color: "#3b82f6" },
         { name: "In Progress", value: inProgress, color: "#f59e0b" },
@@ -170,8 +141,8 @@ export function MyDashboard() {
       ].filter(item => item.value > 0);
 
       // Category distribution
-      const catCounts: Record<string, number> = {};
-      userTickets.forEach(t => {
+      const catCounts = {} as Record<string, number>;
+      ticketsWithSla.forEach(t => {
         const cat = t.incidentCategory || t.incident_category || t.category || "Other";
         catCounts[cat] = (catCounts[cat] || 0) + 1;
       });
@@ -182,12 +153,11 @@ export function MyDashboard() {
         color: colors[idx % colors.length]
       }));
 
-      // Weekly trends
+      // Weekly trends (same as before)
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const dayTickets: Record<string, number> = { "Sun": 0, "Mon": 0, "Tue": 0, "Wed": 0, "Thu": 0, "Fri": 0, "Sat": 0 };
       const dayScores: Record<string, number> = { "Sun": 30, "Mon": 70, "Tue": 85, "Wed": 60, "Thu": 90, "Fri": 75, "Sat": 40 };
-
-      userTickets.forEach(t => {
+      ticketsWithSla.forEach(t => {
         const cDate = toDate(t.createdAt);
         if (cDate && cDate.getTime() >= oneWeekAgo) {
           const dayName = days[cDate.getDay()];
@@ -195,12 +165,11 @@ export function MyDashboard() {
           dayScores[dayName] = Math.min(100, dayScores[dayName] + 5);
         }
       });
-
       const trend = days.map(name => ({ name, tickets: dayTickets[name] }));
       const productivity = days.map(name => ({ name, score: dayScores[name] }));
 
-      // Recent Activity list
-      const sortedByUpdate = [...userTickets].sort((a, b) => {
+      // Recent activity list (sorted by update)
+      const sortedByUpdate = [...ticketsWithSla].sort((a, b) => {
         const aTime = toDate(a.updatedAt || a.createdAt)?.getTime() || 0;
         const bTime = toDate(b.updatedAt || b.createdAt)?.getTime() || 0;
         return bTime - aTime;
@@ -209,20 +178,10 @@ export function MyDashboard() {
       const recentActivity = sortedByUpdate.slice(0, 5).map((t, idx) => {
         let action = "Updated";
         let type = "updated";
-        if (t.status === "Resolved") {
-          action = "Resolved";
-          type = "resolved";
-        } else if (t.status === "Closed") {
-          action = "Closed";
-          type = "closed";
-        } else if (t.createdBy === user.uid && idx === sortedByUpdate.length - 1) {
-          action = "Created";
-          type = "created";
-        } else if (t.assignedTo === user.uid) {
-          action = "Assigned";
-          type = "assigned";
-        }
-
+        if (t.status === "Resolved") { action = "Resolved"; type = "resolved"; }
+        else if (t.status === "Closed") { action = "Closed"; type = "closed"; }
+        else if (t.createdBy === user.uid && idx === sortedByUpdate.length - 1) { action = "Created"; type = "created"; }
+        else if (t.assignedTo === user.uid) { action = "Assigned"; type = "assigned"; }
         const actTime = toDate(t.updatedAt || t.createdAt);
         return {
           id: t.id,
@@ -232,8 +191,7 @@ export function MyDashboard() {
         };
       });
 
-      // Tasks List
-      const myTasks = assigned
+      const myTasks = ticketsWithSla
         .filter(t => t.status === "New" || t.status === "Open" || t.status === "In Progress")
         .slice(0, 5)
         .map(t => {
@@ -241,7 +199,6 @@ export function MyDashboard() {
           if (t.priority?.includes("Critical")) prio = "critical";
           else if (t.priority?.includes("High")) prio = "high";
           else if (t.priority?.includes("Low")) prio = "low";
-
           return {
             id: t.id,
             title: t.title || "Untitled Task",
@@ -251,7 +208,6 @@ export function MyDashboard() {
         });
 
       setData({
-        allTickets,
         cards: {
           totalAssigned: assigned.length,
           totalCreated: created.length,
@@ -271,17 +227,14 @@ export function MyDashboard() {
           productivityScore
         },
         charts: {
-          statusDistribution: statusDistribution.length > 0 ? statusDistribution : [
-            { name: "Open", value: 1, color: "#3b82f6" }
-          ],
-          categoryDistribution: categoryDistribution.length > 0 ? categoryDistribution : [
-            { name: "General Support", value: 1, color: "#3b82f6" }
-          ],
+          statusDistribution,
+          categoryDistribution,
           trend,
           productivity
         },
         recentActivity,
-        myTasks
+        myTasks,
+        allTickets: ticketsWithSla
       });
     }, (error) => {
       console.error("[MyDashboard] Firestore Query Error:", error);
@@ -289,6 +242,8 @@ export function MyDashboard() {
 
     return unsubscribe;
   }, [user]);
+
+  const validBreaches = breaches.filter(b => data?.allTickets?.some((t: any) => t.id === b.record_id) || false);
 
   if (!data) {
     return (
@@ -343,7 +298,7 @@ export function MyDashboard() {
           <AnalyticsCard title="Overdue Tickets" value={data.cards.overdue} />
         </Link>
         <div className="block cursor-pointer">
-          <AnalyticsCard title="Total SLA Breaches" value={breaches.length} />
+          <AnalyticsCard title="Total SLA Breaches" value={validBreaches.length} />
         </div>
       </div>
 
@@ -374,7 +329,7 @@ export function MyDashboard() {
       {/* SLA Breaches Section */}
       <div className="glass-panel rounded-2xl border border-border/80 p-6 shadow-2xl">
         <h2 className="text-[10px] font-black uppercase tracking-widest text-rose-400 mb-4 font-outfit">Active SLA Breaches</h2>
-        {breaches.length === 0 ? (
+        {validBreaches.length === 0 ? (
           <p className="text-xs text-muted-foreground font-outfit">No active SLA breaches recorded for your assigned incidents.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -391,7 +346,7 @@ export function MyDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30 font-outfit">
-                {breaches.map((breach) => {
+                {validBreaches.map((breach) => {
                   const matchedTicket = data.allTickets?.find((t: any) => t.id === breach.record_id);
                   return (
                     <tr key={breach.id} className="hover:bg-rose-500/5 transition-colors">

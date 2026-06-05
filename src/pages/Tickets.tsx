@@ -516,6 +516,8 @@ export function Tickets() {
         responseSlaStatus,
         resolutionSlaStatus: "Pending",
         slaResolutionHours: matchingPolicy.resolutionTimeHours || 24,
+        slaPolicy: matchingPolicy.name || "Default SLA",
+        sla_name: matchingPolicy.name || "Default SLA",
         slaDelayMeta: null,
         slaDelayLogs: [],
         totalPausedTime: 0,

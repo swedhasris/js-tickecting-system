@@ -141,7 +141,14 @@ async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
     }
     
     if (path === "sla_breaches") {
-      const res = await fetch("/api/sla-breaches/all");
+      let url = "/api/sla-breaches/all";
+      if (queryObj && queryObj.clauses) {
+        const whereClause = queryObj.clauses.find((c: any) => c.type === "where" && (c.field === "assigned_user" || c.field === "assignedTo"));
+        if (whereClause && whereClause.value) {
+          url = `/api/sla-breaches/user/${whereClause.value}`;
+        }
+      }
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
       return await res.json();
     }
@@ -449,21 +456,7 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
       const res = await fetch("/api/tickets/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caller: data.caller || "System",
-          category: data.category,
-          incidentCategory: data.incidentCategory || data.incident_category,
-          title: data.title,
-          description: data.description,
-          priority: data.priority,
-          assignedTo: data.assignedTo || null,
-          assignedToName: data.assignedToName || null,
-          createdBy: data.createdBy,
-          createdByName: data.createdByName || data.caller || "System",
-          customFields: data.customFields || {},
-          slaDelayMeta: data.slaDelayMeta || null,
-          slaDelayLogs: data.slaDelayLogs || []
-        })
+        body: JSON.stringify(data)
       });
       if (!res.ok) throw new Error("Failed to create ticket via fallback API");
       const created = await res.json();

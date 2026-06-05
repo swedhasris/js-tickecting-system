@@ -104,10 +104,10 @@ function Section({ title, icon, defaultOpen = true, headerRight, accentColor, ch
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-border rounded-lg bg-white shadow-sm overflow-hidden">
+    <div className="border border-border rounded-lg bg-card shadow-sm overflow-hidden">
       <div
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-3 bg-white hover:bg-muted/20 transition-colors cursor-pointer select-none"
+        className="w-full flex items-center justify-between px-5 py-3 bg-card hover:bg-muted/20 transition-colors cursor-pointer select-none"
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
@@ -760,7 +760,7 @@ export function Timesheet() {
     <div className="space-y-4 max-w-7xl mx-auto">
 
       {/* ═══ TOP ACTION BAR ═══ */}
-      <div className="flex items-center justify-between bg-white p-3 border border-border rounded-lg shadow-sm">
+      <div className="flex items-center justify-between bg-card p-3 border border-border rounded-lg shadow-sm">
         <div className="flex items-center gap-3">
           <Link to="/timesheet/weekly" className="p-1.5 hover:bg-muted rounded transition-colors" title="Back to Weekly View">
             <ChevronRight className="w-4 h-4 rotate-180" />
@@ -959,7 +959,7 @@ export function Timesheet() {
                 {/* ── Speech bubble — shows raw Tamil live, then translated English ── */}
                 {speechListening && (speechRawText || speechLiveText) && (
                   <div className="absolute right-0 -top-1 z-20 max-w-xs w-72 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="bg-white border border-sn-green/40 rounded-xl shadow-lg overflow-hidden">
+                    <div className="bg-card border border-sn-green/40 rounded-xl shadow-lg overflow-hidden">
                       {/* Header */}
                       <div className="flex items-center gap-2 px-3 py-2 bg-sn-green/8 border-b border-sn-green/20">
                         <span className="w-2 h-2 rounded-full bg-sn-green animate-ping flex-shrink-0" />
@@ -981,7 +981,7 @@ export function Timesheet() {
                       )}
                     </div>
                     {/* Bubble tail */}
-                    <div className="absolute -top-1.5 right-6 w-3 h-3 bg-white border-l border-t border-sn-green/40 rotate-45" />
+                    <div className="absolute -top-1.5 right-6 w-3 h-3 bg-card border-l border-t border-sn-green/40 rotate-45" />
                   </div>
                 )}
 
@@ -990,7 +990,7 @@ export function Timesheet() {
                     ref={editorRef}
                     contentEditable="true"
                     onInput={handleEditorInput}
-                    className="min-h-[200px] p-3 text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-sn-green bg-white speech-editor"
+                    className="min-h-[200px] p-3 text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-sn-green bg-card speech-editor"
                     data-placeholder="Enter notes or click the mic to dictate…"
                     suppressContentEditableWarning
                     style={{ opacity: canEdit || speechListening ? 1 : 0.6, cursor: canEdit ? "text" : "default" }}

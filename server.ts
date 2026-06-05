@@ -2042,14 +2042,57 @@ async function startServer() {
         }
       }
 
-      const ticketData = {
+      // Get valid column names from database
+      let dbColNames: string[] = [];
+      try {
+        if (useSQLite) {
+          const db = await getSQLiteDb();
+          const columns = await db.all("PRAGMA table_info(tickets)");
+          dbColNames = columns.map(c => c.name);
+        } else {
+          const columns = await query("SHOW COLUMNS FROM tickets");
+          dbColNames = columns.map(c => c.Field);
+        }
+      } catch (colErr) {
+        console.error("Failed to fetch ticket columns:", colErr);
+      }
+
+      // Map camelCase keys from req.body to snake_case column names
+      const keyMap: Record<string, string> = {
+        assignedTo: "assigned_to",
+        assignedToName: "assigned_to_name",
+        assignmentGroup: "assignment_group",
+        responseDeadline: "response_deadline",
+        resolutionDeadline: "resolution_deadline",
+        responseSlaStatus: "response_sla_status",
+        resolutionSlaStatus: "resolution_sla_status",
+        responseSlaStartTime: "response_sla_start_time",
+        resolutionSlaStartTime: "resolution_sla_start_time",
+        firstResponseAt: "first_response_at",
+        totalPausedTime: "total_paused_time",
+        onHoldStart: "on_hold_start",
+        incidentCategory: "incident_category",
+        resolvedBy: "resolved_by",
+        resolvedAt: "resolved_at",
+        closedBy: "closed_by",
+        closedAt: "closed_at",
+        companyId: "company_id",
+        slaPolicy: "sla_name",
+        sla_name: "sla_name",
+        createdBy: "created_by",
+        createdByName: "created_by_name",
+        createdAt: "created_at",
+        updatedAt: "updated_at"
+      };
+
+      const ticketData: any = {
         ticket_number: ticketNumber,
         caller: req.body.caller || "System",
         category: req.body.category || "Inquiry / Help",
         incident_category: req.body.incidentCategory || req.body.incident_category || null,
         title: req.body.title,
         description: req.body.description,
-        status: "New",
+        status: req.body.status || "New",
         priority: req.body.priority || "4 - Low",
         impact: req.body.impact || "3 - Low",
         urgency: req.body.urgency || "3 - Low",
@@ -2062,11 +2105,34 @@ async function startServer() {
         service: req.body.service || null,
         service_offering: req.body.serviceOffering || null,
         cmdb_item: req.body.cmdbItem || null,
-        subcategory: req.body.subcategory || null
+        subcategory: req.body.subcategory || null,
+        created_at: formatDate(new Date()),
+        updated_at: formatDate(new Date())
       };
 
+      for (const [key, value] of Object.entries(req.body)) {
+        const dbKey = keyMap[key] || key;
+        if (dbKey === "id") continue;
+        if (value !== undefined) {
+          if ((key === "slaDelayMeta" || key === "slaDelayLogs") && value && typeof value === "object") {
+            ticketData[dbKey] = JSON.stringify(value);
+          } else {
+            ticketData[dbKey] = value;
+          }
+        }
+      }
+
+      if (dbColNames.length > 0) {
+        const validSet = new Set(dbColNames);
+        for (const key of Object.keys(ticketData)) {
+          if (!validSet.has(key)) {
+            delete ticketData[key];
+          }
+        }
+      }
+
       // Insert ticket
-      const fields = Object.keys(ticketData).filter(k => ticketData[k] !== null);
+      const fields = Object.keys(ticketData).filter(k => ticketData[k] !== null && ticketData[k] !== undefined);
       const placeholders = fields.map(() => '?').join(', ');
       const values = fields.map(k => ticketData[k]);
 

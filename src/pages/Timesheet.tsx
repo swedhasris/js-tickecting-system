@@ -117,10 +117,10 @@ function Section({ title, icon, defaultOpen = true, isOpen, onToggle, headerRigh
     }
   };
   return (
-    <div className="border border-border rounded-lg bg-white shadow-sm overflow-hidden">
+    <div className="border border-border rounded-lg bg-card shadow-sm overflow-hidden">
       <div
         onClick={toggle}
-        className="w-full flex items-center justify-between px-5 py-3 bg-white hover:bg-muted/20 transition-colors cursor-pointer select-none"
+        className="w-full flex items-center justify-between px-5 py-3 bg-card hover:bg-muted/20 transition-colors cursor-pointer select-none"
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}
@@ -729,7 +729,7 @@ export function Timesheet() {
     <div className="space-y-4 max-w-7xl mx-auto">
 
       {/* ═══ TOP ACTION BAR ═══ */}
-      <div className="flex items-center justify-between bg-white p-3 border border-border rounded-lg shadow-sm">
+      <div className="flex items-center justify-between bg-card p-3 border border-border rounded-lg shadow-sm">
         <div className="flex items-center gap-3">
           <button 
             type="button"
@@ -954,7 +954,7 @@ export function Timesheet() {
                     ref={editorRef}
                     contentEditable={canEdit}
                     onInput={handleEditorInput}
-                    className="min-h-[200px] p-3 text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-sn-green bg-white"
+                    className="min-h-[200px] p-3 text-sm outline-none focus:ring-1 focus:ring-inset focus:ring-sn-green bg-card"
                     data-placeholder="Enter notes..."
                     suppressContentEditableWarning
                   />
@@ -965,7 +965,7 @@ export function Timesheet() {
                     isSupported={speechSupported}
                   />
                   {speechListening && (
-                    <div className="px-3 py-2 text-[10px] text-sn-green font-medium border-t border-border bg-white">
+                    <div className="px-3 py-2 text-[10px] text-sn-green font-medium border-t border-border bg-card">
                       Listening{speechLiveText ? `: ${speechLiveText}` : "..."}
                     </div>
                   )}

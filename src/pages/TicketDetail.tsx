@@ -1235,11 +1235,12 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Affected User</label>
                 <div className="col-span-2 flex gap-1">
                   <input
+                    readOnly
                     value={editedTicket?.affectedUser || ""}
                     onChange={(e) => updateLocalField("affectedUser", e.target.value)}
-                    className="flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0"><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1247,9 +1248,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Business phone</label>
                 <input
+                  readOnly
                   value={editedTicket?.businessPhone || ""}
                   onChange={(e) => updateLocalField("businessPhone", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
                 />
               </div>
 
@@ -1258,11 +1260,12 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Location</label>
                 <div className="col-span-2 flex gap-1">
                   <input
+                    readOnly
                     value={editedTicket?.location || ""}
                     onChange={(e) => updateLocalField("location", e.target.value)}
-                    className="flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0"><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1270,12 +1273,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Category</label>
                 <select
+                  disabled
                   value={editedTicket?.categoryId || ""}
                   onChange={(e) => {
                     const category = visibleCategories.find((item) => item.id === e.target.value);
                     setEditedTicket((prev: any) => ({ ...prev, categoryId: e.target.value, category: category?.name || "", subcategoryId: "", subcategory: "", serviceId: "", service: "", serviceProvider: "", assignmentGroup: "" }));
                   }}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs outline-none h-8 transition-colors focus:ring-1 focus:ring-sn-green"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none h-8 transition-colors"
                 >
                   {visibleCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
@@ -1293,6 +1297,7 @@ export function TicketDetail() {
                           <span className="text-red-500 font-bold">*</span> {field.name}
                         </label>
                         <select
+                          disabled
                           value={editedTicket?.customFields?.[field.id] || ""}
                           onChange={e => {
                             setEditedTicket((prev: any) => ({
@@ -1303,7 +1308,7 @@ export function TicketDetail() {
                               }
                             }));
                           }}
-                          className="col-span-2 p-1.5 border border-border rounded text-xs focus:ring-1 focus:ring-sn-green outline-none h-8 bg-white"
+                          className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs focus:ring-1 focus:ring-sn-green outline-none h-8 bg-white"
                           required
                         >
                           <option value="">Select {field.name}</option>
@@ -1335,11 +1340,12 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Configuration item</label>
                 <div className="col-span-2 flex gap-1">
                   <input
+                    readOnly
                     value={editedTicket?.configurationItem || ""}
                     onChange={(e) => updateLocalField("configurationItem", e.target.value)}
-                    className="flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0"><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1348,11 +1354,12 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Computer Name</label>
                 <div className="col-span-2 flex gap-1">
                   <input
+                    readOnly
                     value={editedTicket?.computerName || ""}
                     onChange={(e) => updateLocalField("computerName", e.target.value)}
-                    className="flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0"><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1360,9 +1367,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Impact</label>
                 <select
+                  disabled
                   value={editedTicket?.impact || ""}
                   onChange={(e) => updateLocalField("impact", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors"
                 >
                   <option>1 - High</option>
                   <option>2 - Medium</option>
@@ -1374,9 +1382,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Urgency</label>
                 <select
+                  disabled
                   value={editedTicket?.urgency || ""}
                   onChange={(e) => updateLocalField("urgency", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors"
                 >
                   <option>1 - High</option>
                   <option>2 - Medium</option>
@@ -1394,6 +1403,7 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Knowledge Article Used?</label>
                 <input
+                  disabled
                   type="checkbox"
                   checked={editedTicket?.knowledgeArticleUsed || false}
                   onChange={(e) => updateLocalField("knowledgeArticleUsed", e.target.checked as any)}
@@ -1418,7 +1428,7 @@ export function TicketDetail() {
               {/* State */}
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">State</label>
-                <select value={editedTicket?.status || ""} onChange={(e) => updateLocalField("status", e.target.value)} className="col-span-2 p-1.5 border border-border rounded text-xs outline-none h-8 focus:ring-1 focus:ring-sn-green transition-colors">
+                <select disabled value={editedTicket?.status || ""} onChange={(e) => updateLocalField("status", e.target.value)} className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none h-8 transition-colors">
                   {["New", "In Progress", "On Hold", "Awaiting User", "Awaiting Vendor", "Resolved", "Closed", "Canceled"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
@@ -1482,6 +1492,7 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Acknowledged</label>
                 <input
+                  disabled
                   type="checkbox"
                   checked={editedTicket?.acknowledged || false}
                   onChange={(e) => updateLocalField("acknowledged", e.target.checked as any)}
@@ -1493,9 +1504,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Channel</label>
                 <select
+                  disabled
                   value={editedTicket?.channel || "Self-service"}
                   onChange={(e) => updateLocalField("channel", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
                 >
                   <option>Self-service</option>
                   <option>Email</option>
@@ -1509,9 +1521,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Password Reset?</label>
                 <select
+                  disabled
                   value={editedTicket?.passwordReset || "No"}
                   onChange={(e) => updateLocalField("passwordReset", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
                 >
                   <option>No</option>
                   <option>Yes</option>
@@ -1522,9 +1535,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Rackspace Ticket No</label>
                 <input
+                  readOnly
                   value={editedTicket?.rackspaceTicketNo || ""}
                   onChange={(e) => updateLocalField("rackspaceTicketNo", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
                 />
               </div>
 
@@ -1532,9 +1546,10 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Additional Information</label>
                 <input
+                  readOnly
                   value={editedTicket?.additionalInformation || ""}
                   onChange={(e) => updateLocalField("additionalInformation", e.target.value)}
-                  className="col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
                 />
               </div>
 
@@ -1550,7 +1565,7 @@ export function TicketDetail() {
             <div className="col-span-1 md:col-span-2 mt-4 space-y-4">
               <div className="grid grid-cols-6 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Short description</label>
-                <input className="col-span-5 p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8" value={editedTicket?.title || ""} onChange={(e) => updateLocalField("title", e.target.value)} />
+                <input readOnly className="col-span-5 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none h-8" value={editedTicket?.title || ""} onChange={(e) => updateLocalField("title", e.target.value)} />
               </div>
             </div>
           </div>
