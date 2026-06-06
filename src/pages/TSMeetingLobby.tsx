@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import {
   Video, VideoOff, Mic, MicOff, ArrowLeft, Play, Shield,
-  User, CheckCircle, AlertCircle, RefreshCw
+  User, CheckCircle, AlertCircle, RefreshCw, Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -404,10 +404,22 @@ export function TSMeetingLobby() {
         <div className="flex flex-col items-center justify-center">
           <div className="relative w-full max-w-lg aspect-video rounded-3xl overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center">
             {mediaError ? (
-              <div className="text-center max-w-xs px-4">
-                <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-3" />
-                <p className="text-slate-300 text-sm font-semibold mb-1">Hardware Access Issue</p>
+              <div className="text-center max-w-sm px-6 py-4 space-y-3">
+                <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto" />
+                <p className="text-slate-300 text-sm font-semibold">Hardware Access Issue</p>
                 <p className="text-slate-400 text-xs leading-relaxed">{mediaError}</p>
+                {permissionStatus === "denied" && (
+                  <div className="mt-2 text-left bg-slate-950/80 border border-slate-800 p-3.5 rounded-xl space-y-1 text-[11px] text-slate-400">
+                    <p className="font-bold text-red-400 flex items-center gap-1.5 mb-1.5">
+                      <Lock className="w-3.5 h-3.5 text-red-500" /> Blocked in Browser
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1.5">
+                      <li>Click the <strong>lock icon</strong> (🔒) next to the domain name in the address bar.</li>
+                      <li>Toggle <strong>Camera</strong> and <strong>Microphone</strong> permissions to **Allow**.</li>
+                      <li>Click **Refresh** or reload the page to apply changes.</li>
+                    </ol>
+                  </div>
+                )}
               </div>
             ) : videoEnabled ? (
               <video

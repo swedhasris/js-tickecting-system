@@ -9,6 +9,7 @@ export interface RemotePeer {
   audioMuted: boolean;
   videoMuted: boolean;
   handRaised: boolean;
+  reaction?: string;
 }
 
 export interface ChatMessage {
@@ -81,6 +82,10 @@ const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
+    { urls: "stun:stun.services.mozilla.com" },
     { urls: "stun:global.stun.twilio.com:3478" },
     {
       urls: [
@@ -95,10 +100,14 @@ const RTC_CONFIG: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
-const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+const AUDIO_CONSTRAINTS: any = {
   echoCancellation: { ideal: true },
   noiseSuppression: { ideal: true },
   autoGainControl: { ideal: true },
+  channelCount: { ideal: 1 },
+  latency: { ideal: 0.005 },
+  sampleRate: { ideal: 48000 },
+  sampleSize: { ideal: 16 }
 };
 
 const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
@@ -395,13 +404,14 @@ export function useTSMeeting(params: {
     setState((prev) => ({ ...prev, cameraPermission, microphonePermission }));
   }, [readPermissionState]);
 
-  const renegotiatePeer = useCallback(async (remotePeerId: string) => {
+  const renegotiatePeer = useCallback(async (remotePeerId: string, iceRestart = false) => {
     const pc = peerConnectionsRef.current.get(remotePeerId);
-    if (!pc || pc.signalingState !== "stable") return;
+    if (!pc || (pc.signalingState !== "stable" && !iceRestart)) return;
     try {
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true,
+        iceRestart
       });
       await pc.setLocalDescription(offer);
       sendSignal({
@@ -481,6 +491,30 @@ export function useTSMeeting(params: {
     });
   }, [replacePeerList, updateDiagnostics]);
 
+  const cleanup = useCallback(() => {
+    intentionalCloseRef.current = true;
+
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+
+    wsRef.current?.close();
+    wsRef.current = null;
+
+    closeAllPeerConnections();
+
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
+    screenStreamRef.current = null;
+  }, [closeAllPeerConnections]);
+
   const createPeerConnection = useCallback((remotePeerId: string): RTCPeerConnection => {
     const existing = peerConnectionsRef.current.get(remotePeerId);
     if (existing) return existing;
@@ -520,20 +554,16 @@ export function useTSMeeting(params: {
       const connectionState = pc.connectionState;
       updateDiagnostics({ webrtcConnectionState: connectionState, connectionStatus: connectionState });
 
-      if (connectionState === "failed") {
+      if (connectionState === "failed" || connectionState === "disconnected") {
         updatePeer(remotePeerId, (peer) => ({ ...peer, stream: null }));
-        renegotiatePeer(remotePeerId);
-      }
-
-      if (connectionState === "disconnected") {
-        updatePeer(remotePeerId, (peer) => ({ ...peer, stream: peer.stream }));
+        renegotiatePeer(remotePeerId, true);
       }
     };
 
     pc.oniceconnectionstatechange = () => {
       updateDiagnostics({ iceConnectionState: pc.iceConnectionState });
-      if (pc.iceConnectionState === "failed") {
-        renegotiatePeer(remotePeerId);
+      if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
+        renegotiatePeer(remotePeerId, true);
       }
     };
 
@@ -884,6 +914,29 @@ export function useTSMeeting(params: {
         break;
       }
 
+      case "host-remove": {
+        if (payload?.targetId === peerId) {
+          cleanup();
+          onMeetingEnded?.();
+        }
+        break;
+      }
+
+      case "reaction": {
+        if (!from) break;
+        const rx = payload?.reactionType;
+        updatePeer(from, (peer) => ({ ...peer, reaction: rx }));
+        setTimeout(() => {
+          updatePeer(from, (peer) => {
+            if (peer.reaction === rx) {
+              return { ...peer, reaction: undefined };
+            }
+            return peer;
+          });
+        }, 4000);
+        break;
+      }
+
       case "meeting-ended": {
         onMeetingEnded?.();
         break;
@@ -915,6 +968,7 @@ export function useTSMeeting(params: {
     sendSignal,
     updateDiagnostics,
     updatePeer,
+    cleanup,
   ]);
 
   const connectWebSocket = useCallback(() => {
@@ -1145,39 +1199,33 @@ export function useTSMeeting(params: {
     sendSignal({ type: "chat", from: peerId, fromName: peerName, payload: message });
   }, [peerId, peerName, sendSignal]);
 
-  const endMeeting = useCallback(() => {
+  const endMeeting = useCallback(async () => {
+    try {
+      await fetch(`/api/ts-meetings/${tsmId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Completed" })
+      });
+    } catch (err) {
+      console.warn("[TS Meeting] Failed to mark meeting completed on backend:", err);
+    }
     sendSignal({ type: "meeting-ended", from: peerId, fromName: peerName, payload: {} });
     onMeetingEnded?.();
-  }, [onMeetingEnded, peerId, peerName, sendSignal]);
+  }, [onMeetingEnded, peerId, peerName, sendSignal, tsmId]);
 
   const mutePeer = useCallback((targetId: string) => {
     if (!isHost) return;
     sendSignal({ type: "host-mute", from: peerId, fromName: peerName, payload: { targetId } });
   }, [isHost, peerId, peerName, sendSignal]);
 
-  const cleanup = useCallback(() => {
-    intentionalCloseRef.current = true;
+  const kickPeer = useCallback((targetId: string) => {
+    if (!isHost) return;
+    sendSignal({ type: "host-remove", from: peerId, fromName: peerName, payload: { targetId } });
+  }, [isHost, peerId, peerName, sendSignal]);
 
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current);
-      statsIntervalRef.current = null;
-    }
-
-    wsRef.current?.close();
-    wsRef.current = null;
-
-    closeAllPeerConnections();
-
-    localStreamRef.current?.getTracks().forEach((track) => track.stop());
-    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
-    localStreamRef.current = null;
-    screenStreamRef.current = null;
-  }, [closeAllPeerConnections]);
+  const sendReaction = useCallback((reactionType: string) => {
+    sendSignal({ type: "reaction", from: peerId, fromName: peerName, payload: { reactionType } });
+  }, [peerId, peerName, sendSignal]);
 
   useEffect(() => {
     let mounted = true;
@@ -1247,6 +1295,54 @@ export function useTSMeeting(params: {
     updateDiagnostics,
   ]);
 
+  const applyAdaptiveEncodings = useCallback((quality: string) => {
+    for (const pc of peerConnectionsRef.current.values()) {
+      if (pc.connectionState !== "connected" && pc.iceConnectionState !== "connected") continue;
+      const senders = pc.getSenders();
+      for (const sender of senders) {
+        if (!sender.track) continue;
+        const params = sender.getParameters();
+        if (!params.encodings) params.encodings = [{}];
+
+        if (sender.track.kind === "video") {
+          let maxBitrate = 1500000;
+          let scaleResolutionDownBy = 1.0;
+          let maxFramerate = 30;
+
+          if (quality === "poor" || quality === "offline") {
+            maxBitrate = 150000;
+            scaleResolutionDownBy = 3.0;
+            maxFramerate = 10;
+          } else if (quality === "fair") {
+            maxBitrate = 450000;
+            scaleResolutionDownBy = 1.5;
+            maxFramerate = 20;
+          } else if (quality === "good" || quality === "online") {
+            maxBitrate = 2000000;
+            scaleResolutionDownBy = 1.0;
+            maxFramerate = 30;
+          }
+
+          params.encodings[0].maxBitrate = maxBitrate;
+          params.encodings[0].scaleResolutionDownBy = scaleResolutionDownBy;
+          params.encodings[0].maxFramerate = maxFramerate;
+        } else if (sender.track.kind === "audio") {
+          let maxBitrate = 64000;
+          if (quality === "poor" || quality === "offline") {
+            maxBitrate = 16000;
+          } else if (quality === "fair") {
+            maxBitrate = 32000;
+          }
+          params.encodings[0].maxBitrate = maxBitrate;
+        }
+
+        sender.setParameters(params).catch((err) => {
+          console.warn("[TS Meeting] Adaptive bitrate update failed:", err);
+        });
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (statsIntervalRef.current) {
       clearInterval(statsIntervalRef.current);
@@ -1301,6 +1397,8 @@ export function useTSMeeting(params: {
           iceConnectionState: firstConnectedPc.iceConnectionState,
           signalingState: firstConnectedPc.signalingState,
         });
+
+        applyAdaptiveEncodings(networkQuality);
       } catch (err) {
         console.warn("[TS Meeting] Failed to collect WebRTC stats:", err);
       }
@@ -1312,7 +1410,7 @@ export function useTSMeeting(params: {
         statsIntervalRef.current = null;
       }
     };
-  }, [updateDiagnostics]);
+  }, [updateDiagnostics, applyAdaptiveEncodings]);
 
   useEffect(() => {
     const diagnosticsPayload = {
@@ -1351,6 +1449,8 @@ export function useTSMeeting(params: {
     sendChat,
     endMeeting,
     mutePeer,
+    kickPeer,
+    sendReaction,
     initLocalMedia: acquireLocalMedia,
     selectCamera,
     selectMicrophone,
@@ -1360,6 +1460,8 @@ export function useTSMeeting(params: {
     acquireLocalMedia,
     endMeeting,
     mutePeer,
+    kickPeer,
+    sendReaction,
     raiseHand,
     refreshDevices,
     retryConnection,

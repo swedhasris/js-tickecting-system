@@ -10,9 +10,6 @@ const STATUS_COLORS: Record<string, React.CSSProperties> = {
   Approved:  { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
   Rejected:  { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
 };
-  Approved: "bg-green-100 text-green-700",
-  Rejected: "bg-red-100 text-red-700",
-};
 
 const DEFAULT_TASKS = [
   "General Support", "Ticket Resolution", "Project Work",

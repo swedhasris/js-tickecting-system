@@ -955,6 +955,8 @@ CREATE TABLE IF NOT EXISTS ts_meetings (
     attachments TEXT,
     comments TEXT,
     timeline TEXT,
+    recurrence VARCHAR(50),
+    ticket_id VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_room_id (room_id)

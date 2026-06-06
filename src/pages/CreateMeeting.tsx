@@ -83,6 +83,8 @@ interface Meeting {
   isTsMeeting?: boolean;
   tsmId?: string;
   tsPassword?: string;
+  recurrence?: string;
+  ticketId?: string;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -155,6 +157,8 @@ const mapDBToMeeting = (r: any): Meeting => {
     isTsMeeting: isTs,
     tsmId: r.tsm_id,
     tsPassword: r.password || '',
+    recurrence: r.recurrence || 'None',
+    ticketId: r.ticket_id || '',
   };
 };
 
@@ -236,6 +240,8 @@ export function CreateMeeting() {
     isTsMeeting: false,
     tsmId: "",
     tsPassword: "",
+    recurrence: "None",
+    ticketId: "",
   });
 
   const [form, setForm] = useState(emptyForm());
@@ -273,6 +279,53 @@ export function CreateMeeting() {
     setView("create");
   };
 
+  const handleCreateInstantMeeting = async () => {
+    try {
+      const now = new Date();
+      const tsm_id = `TSM-${Math.floor(100000 + Math.random() * 900000)}`;
+      const room_id = `ROOM-${tsm_id.split("-")[1]}-TSME`;
+      const dateStr = now.toISOString().slice(0, 10);
+      const timeStr = now.toTimeString().slice(0, 5);
+
+      const reqBody = {
+        tsm_id,
+        title: `Instant Meeting by ${currentUserName}`,
+        description: "Quick ad-hoc internal conference call",
+        meeting_date: dateStr,
+        meeting_time: timeStr,
+        duration: "1 hour",
+        organizer: currentUserName,
+        participants: [],
+        meeting_type: "Internal",
+        priority: "Medium",
+        status: "In Progress",
+        room_id,
+        password: "",
+        notes: "",
+        attachments: [],
+        comments: [],
+        timeline: [{ key: genUUID(), label: "Instant Meeting Created", timestamp: now.toISOString(), performedBy: currentUserName }],
+        recurrence: "None",
+        ticket_id: null
+      };
+
+      const res = await fetch("/api/ts-meetings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody)
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to create instant meeting");
+      }
+
+      await fetchTSMeetings();
+      navigate(`/ts-meeting/${tsm_id}/lobby`);
+    } catch (err: any) {
+      alert(err.message || "Failed to start instant meeting");
+    }
+  };
+
   const openEdit = (m: Meeting) => {
     setEditingMeeting(m);
     setForm({
@@ -291,6 +344,8 @@ export function CreateMeeting() {
       isTsMeeting: m.isTsMeeting || false,
       tsmId: m.tsmId || "",
       tsPassword: m.tsPassword || "",
+      recurrence: m.recurrence || "None",
+      ticketId: m.ticketId || "",
     });
     setFormError("");
     setView("create");
@@ -340,7 +395,9 @@ export function CreateMeeting() {
           notes: updated.notes,
           attachments: updated.attachments,
           comments: updated.comments,
-          timeline: updated.timeline
+          timeline: updated.timeline,
+          recurrence: updated.recurrence,
+          ticket_id: updated.ticketId
         })
       });
       if (res.ok) {
@@ -386,7 +443,9 @@ export function CreateMeeting() {
         notes: form.notes,
         attachments: editingMeeting ? editingMeeting.attachments : [],
         comments: editingMeeting ? editingMeeting.comments : [],
-        timeline
+        timeline,
+        recurrence: form.recurrence,
+        ticket_id: form.ticketId
       };
 
       const res = await fetch("/api/ts-meetings", {
@@ -531,31 +590,9 @@ export function CreateMeeting() {
         performedBy: currentUserName,
       }],
     };
-    setSelectedMeeting(updated);
-    await updateTSMeetingOnBackend(updated);
-  };> prev.map(m => m.id === updated.id ? updated : m));
-    setSelectedMeeting(updated);
-    setForm(prev => ({ ...prev, newComment: "" }));
-  };
-
-  const handleUpdateParticipantStatus = (meetingId: string, participantId: string, status: Participant["status"]) => {
-    if (!selectedMeeting) return;
-    const now = new Date().toISOString();
-    const updated: Meeting = {
-      ...selectedMeeting,
-      updatedAt: now,
-      participants: selectedMeeting.participants.map(p =>
-        p.id === participantId ? { ...p, status } : p
-      ),
-      timeline: [...selectedMeeting.timeline, {
-        key: genUUID(),
-        label: `Participant status updated to "${status}"`,
-        timestamp: now,
-        performedBy: currentUserName,
-      }],
-    };
     setMeetings(prev => prev.map(m => m.id === updated.id ? updated : m));
     setSelectedMeeting(updated);
+    await updateTSMeetingOnBackend(updated);
   };
 
   // ── Attendance stats ─────────────────────────────────────────────────────────
@@ -640,6 +677,19 @@ export function CreateMeeting() {
                     <option value="Medium">Medium</option>
                     <option value="Low">Low</option>
                   </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label>Recurrence</label>
+                  <select value={form.recurrence} onChange={e => setForm(p => ({ ...p, recurrence: e.target.value }))}>
+                    <option value="None">None</option>
+                    <option value="Daily">Daily</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Monthly">Monthly</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label>Related Ticket ID (Optional)</label>
+                  <input type="text" placeholder="e.g. TC-1002" value={form.ticketId} onChange={e => setForm(p => ({ ...p, ticketId: e.target.value }))} />
                 </div>
                 {editingMeeting && (
                   <div className="flex flex-col gap-1">
@@ -1208,12 +1258,20 @@ export function CreateMeeting() {
             Schedule and manage internal meetings — generate unique room IDs, track attendance, and share meeting links.
           </p>
         </div>
-        <Button
-          onClick={openCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold border border-blue-500/20 shadow-[0_0_15px_rgba(37,99,235,0.25)] hover:shadow-[0_0_25px_rgba(37,99,235,0.4)] transition-all cursor-pointer self-start md:self-center"
-        >
-          <Plus className="w-4 h-4 mr-2" /> New Meeting
-        </Button>
+        <div className="flex gap-2 self-start md:self-center">
+          <Button
+            onClick={openCreate}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold border border-blue-500/20 shadow-[0_0_15px_rgba(37,99,235,0.25)] hover:shadow-[0_0_25px_rgba(37,99,235,0.4)] transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4 mr-2" /> New Meeting
+          </Button>
+          <Button
+            onClick={handleCreateInstantMeeting}
+            className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold border border-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_25px_rgba(6,182,212,0.4)] transition-all cursor-pointer"
+          >
+            <Video className="w-4 h-4 mr-2" /> Instant Meeting
+          </Button>
+        </div>
       </div>
 
       {/* Stats Grid */}

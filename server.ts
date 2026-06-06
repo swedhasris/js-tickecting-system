@@ -523,6 +523,8 @@ async function initSQLiteSchema() {
       attachments TEXT,
       comments TEXT,
       timeline TEXT,
+      recurrence TEXT,
+      ticket_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -1415,6 +1417,8 @@ async function startServer() {
           attachments TEXT,
           comments TEXT,
           timeline TEXT,
+          recurrence VARCHAR(50),
+          ticket_id VARCHAR(50),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB;
@@ -5055,12 +5059,90 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   // ============================================================
   // TS MEETINGS API & WEBRTC CONFERENCE ROOMS
   // ============================================================
+  async function notifyMeetingEvent(tsmId: string, eventType: 'created' | 'updated' | 'started' | 'ended' | 'join' | 'leave', actorId = 'system', actorName = 'System') {
+    try {
+      const rows = await query("SELECT * FROM ts_meetings WHERE tsm_id = ?", [tsmId]);
+      if (rows.length === 0) return;
+      const meeting = rows[0];
+
+      let parsedParticipants: any[] = [];
+      try {
+        parsedParticipants = typeof meeting.participants === 'string'
+          ? JSON.parse(meeting.participants)
+          : (meeting.participants || []);
+      } catch (e) {
+        parsedParticipants = [];
+      }
+
+      const emails = parsedParticipants.map((p: any) => p.email).filter(Boolean);
+      const organizer = meeting.organizer;
+
+      let msg = "";
+      if (eventType === 'created') {
+        msg = `New TS Meeting scheduled: "${meeting.title}" on ${meeting.meeting_date} at ${meeting.meeting_time}.`;
+      } else if (eventType === 'updated') {
+        msg = `TS Meeting updated: "${meeting.title}" details changed.`;
+      } else if (eventType === 'started') {
+        msg = `TS Meeting started: "${meeting.title}" is in progress. Join now!`;
+      } else if (eventType === 'ended') {
+        msg = `TS Meeting ended: "${meeting.title}" has completed.`;
+      } else if (eventType === 'join') {
+        msg = `Participant joined: ${actorName} has joined the meeting "${meeting.title}".`;
+      } else if (eventType === 'leave') {
+        msg = `Participant left: ${actorName} has left the meeting "${meeting.title}".`;
+      }
+
+      // Find user uids to alert
+      let queryStr = "SELECT uid FROM users WHERE 0 = 1";
+      const queryParams: any[] = [];
+      if (emails.length > 0) {
+        queryStr += " OR email IN (" + emails.map(() => "?").join(",") + ")";
+        queryParams.push(...emails);
+      }
+      if (organizer) {
+        queryStr += " OR email = ? OR name = ?";
+        queryParams.push(organizer, organizer);
+      }
+
+      const matchingUsers = queryParams.length > 0 ? await query(queryStr, queryParams) : [];
+
+      for (const targetUser of matchingUsers) {
+        if ((eventType === 'join' || eventType === 'leave') && targetUser.uid === actorId) {
+          continue;
+        }
+
+        const result = await execute(
+          `INSERT INTO notifications (user_id, message, ticket_id, ticket_number, actor_id, actor_name, is_read)
+           VALUES (?, ?, ?, ?, ?, ?, 0)`,
+          [targetUser.uid, msg, meeting.tsm_id, meeting.tsm_id, actorId, actorName]
+        );
+
+        const newNotif = {
+          id: result.insertId?.toString() || Math.random().toString(),
+          user_id: targetUser.uid,
+          message: msg,
+          ticket_id: meeting.tsm_id,
+          ticket_number: meeting.tsm_id,
+          actor_id: actorId,
+          actor_name: actorName,
+          is_read: 0,
+          created_at: new Date().toISOString()
+        };
+
+        sendNotificationToUser(targetUser.uid, newNotif);
+      }
+    } catch (err: any) {
+      console.error("[Meeting Notification Error]", err.message);
+    }
+  }
+
   app.post('/api/ts-meetings', async (req: any, res: any) => {
     try {
       const {
         tsm_id, title, description, meeting_date, meeting_time,
         duration, organizer, participants, meeting_type, priority,
-        status, room_id, password, notes, attachments, comments, timeline
+        status, room_id, password, notes, attachments, comments, timeline,
+        recurrence, ticket_id
       } = req.body;
 
       if (!tsm_id || !title || !room_id) {
@@ -5079,29 +5161,32 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
             title = ?, description = ?, meeting_date = ?, meeting_time = ?,
             duration = ?, organizer = ?, participants = ?, meeting_type = ?,
             priority = ?, status = ?, room_id = ?, password = ?, notes = ?,
-            attachments = ?, comments = ?, timeline = ?
+            attachments = ?, comments = ?, timeline = ?, recurrence = ?, ticket_id = ?
            WHERE tsm_id = ?`,
           [
             title, description || null, meeting_date || null, meeting_time || null,
             duration || null, organizer || null, partsJson, meeting_type || null,
             priority || null, status || 'Draft', room_id, password || null, notes || null,
-            attsJson, commsJson, timelineJson, tsm_id
+            attsJson, commsJson, timelineJson, recurrence || 'None', ticket_id || null, tsm_id
           ]
         );
+        notifyMeetingEvent(tsm_id, 'updated');
       } else {
         await execute(
           `INSERT INTO ts_meetings (
             tsm_id, title, description, meeting_date, meeting_time,
             duration, organizer, participants, meeting_type, priority,
-            status, room_id, password, notes, attachments, comments, timeline
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            status, room_id, password, notes, attachments, comments, timeline,
+            recurrence, ticket_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             tsm_id, title, description || null, meeting_date || null, meeting_time || null,
             duration || null, organizer || null, partsJson, meeting_type || null,
             priority || null, status || 'Draft', room_id, password || null, notes || null,
-            attsJson, commsJson, timelineJson
+            attsJson, commsJson, timelineJson, recurrence || 'None', ticket_id || null
           ]
         );
+        notifyMeetingEvent(tsm_id, 'created');
       }
       res.json({ success: true, tsm_id });
     } catch (e: any) {
@@ -5153,6 +5238,9 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
 
       if (status !== undefined) {
         await execute("UPDATE ts_meetings SET status = ? WHERE tsm_id = ?", [status, tsmId]);
+        if (status === 'Completed') {
+          notifyMeetingEvent(tsmId, 'ended');
+        }
       }
       if (notes !== undefined) {
         await execute("UPDATE ts_meetings SET notes = ? WHERE tsm_id = ?", [notes, tsmId]);
@@ -5173,6 +5261,15 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
         "INSERT INTO ts_meeting_attendance (tsm_id, peer_id, name, join_time) VALUES (?, ?, ?, ?)",
         [tsmId, peerId, name, joinTime]
       );
+
+      // Check and transition Scheduled meetings to In Progress
+      const meetings = await query("SELECT status FROM ts_meetings WHERE tsm_id = ?", [tsmId]);
+      if (meetings.length > 0 && meetings[0].status === 'Scheduled') {
+        await execute("UPDATE ts_meetings SET status = 'In Progress' WHERE tsm_id = ?", [tsmId]);
+        notifyMeetingEvent(tsmId, 'started', peerId, name);
+      }
+
+      notifyMeetingEvent(tsmId, 'join', peerId, name);
       res.json({ success: true });
     } catch (e: any) {
       console.error('[TS Meetings API] Join error:', e.message);
@@ -5183,7 +5280,7 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   app.post('/api/ts-meetings/:tsmId/leave', async (req: any, res: any) => {
     try {
       const { tsmId } = req.params;
-      const { peerId, leaveTime } = req.body;
+      const { peerId, name, leaveTime } = req.body;
 
       const logs = await query(
         "SELECT id FROM ts_meeting_attendance WHERE tsm_id = ? AND peer_id = ? AND leave_time IS NULL ORDER BY id DESC LIMIT 1",
@@ -5200,6 +5297,8 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
           [leaveTime, tsmId, peerId]
         );
       }
+
+      notifyMeetingEvent(tsmId, 'leave', peerId, name || 'Participant');
       res.json({ success: true });
     } catch (e: any) {
       console.error('[TS Meetings API] Leave error:', e.message);
@@ -6712,6 +6811,12 @@ Respond in a conversational, friendly tone.`,
         if (!tsmColNames.includes("timeline")) {
           await db.exec("ALTER TABLE ts_meetings ADD COLUMN timeline TEXT");
         }
+        if (!tsmColNames.includes("recurrence")) {
+          await db.exec("ALTER TABLE ts_meetings ADD COLUMN recurrence TEXT");
+        }
+        if (!tsmColNames.includes("ticket_id")) {
+          await db.exec("ALTER TABLE ts_meetings ADD COLUMN ticket_id TEXT");
+        }
       } else {
         const checkAndAddColumn = async (table: string, col: string, type: string) => {
           try {
@@ -6751,6 +6856,8 @@ Respond in a conversational, friendly tone.`,
         await checkAndAddColumn("ts_meetings", "attachments", "TEXT");
         await checkAndAddColumn("ts_meetings", "comments", "TEXT");
         await checkAndAddColumn("ts_meetings", "timeline", "TEXT");
+        await checkAndAddColumn("ts_meetings", "recurrence", "VARCHAR(50)");
+        await checkAndAddColumn("ts_meetings", "ticket_id", "VARCHAR(50)");
       }
       console.log("[DB Migration] Email columns verified/added to tickets table.");
 

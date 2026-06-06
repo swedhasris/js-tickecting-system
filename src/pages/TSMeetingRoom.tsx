@@ -27,6 +27,8 @@ export function TSMeetingRoom() {
   const [meetingNotes, setMeetingNotes] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSavedTime, setNotesSavedTime] = useState<string | null>(null);
+  const [showReactions, setShowReactions] = useState(false);
+  const [localReaction, setLocalReaction] = useState<string | null>(null);
   
   // File upload state
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -302,6 +304,12 @@ export function TSMeetingRoom() {
                 {meeting.isMuted && <MicOff className="w-3.5 h-3.5 text-red-500" />}
               </div>
 
+              {localReaction && (
+                <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur px-2.5 py-1.5 rounded-xl text-2xl border border-slate-800 animate-bounce z-10 shadow-lg">
+                  {localReaction}
+                </div>
+              )}
+
               {meeting.handRaised && (
                 <div className="absolute top-3 right-3 bg-yellow-500 text-slate-950 px-2 py-1 rounded-md text-xs font-bold flex items-center space-x-1 animate-bounce">
                   <span>✋ Hand Raised</span>
@@ -557,15 +565,28 @@ export function TSMeetingRoom() {
                           )}
                         </div>
 
-                        {/* Host mute controls */}
+                        {/* Host controls */}
                         {meeting.isHost && (
-                          <button
-                            onClick={() => meeting.mutePeer(p.peerId)}
-                            className="p-1 bg-slate-800 hover:bg-red-950 border border-slate-700 text-slate-400 hover:text-red-400 rounded-lg text-xs font-semibold transition-colors"
-                            title="Force Mute Peer"
-                          >
-                            Mute
-                          </button>
+                          <div className="flex space-x-1">
+                            <button
+                              onClick={() => meeting.mutePeer(p.peerId)}
+                              className="px-2 py-1 bg-slate-800 hover:bg-red-950 border border-slate-700 text-slate-400 hover:text-red-400 rounded-lg text-[10px] font-semibold transition-colors"
+                              title="Force Mute Peer"
+                            >
+                              Mute
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to remove ${p.name} from the meeting?`)) {
+                                  meeting.kickPeer(p.peerId);
+                                }
+                              }}
+                              className="px-2 py-1 bg-slate-800 hover:bg-red-950 border border-slate-700 text-slate-400 hover:text-red-400 rounded-lg text-[10px] font-semibold transition-colors"
+                              title="Remove Participant"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -681,6 +702,39 @@ export function TSMeetingRoom() {
             <Hand className="w-5 h-5" />
           </button>
 
+          {/* Reactions */}
+          <div className="relative">
+            <button
+              onClick={() => setShowReactions(!showReactions)}
+              className={`p-3.5 rounded-full border transition-all duration-300 ${
+                showReactions
+                  ? "bg-blue-600 border-blue-500 text-white hover:bg-blue-700"
+                  : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
+              }`}
+              title="Send Reaction"
+            >
+              <span className="text-xl leading-none">☺</span>
+            </button>
+            {showReactions && (
+              <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-slate-900 border border-slate-800 p-2 rounded-2xl flex space-x-2 shadow-2xl z-50">
+                {["👍", "👏", "😂", "❤️", "🎉", "😮"].map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      meeting.sendReaction(emoji);
+                      setLocalReaction(emoji);
+                      setShowReactions(false);
+                      setTimeout(() => setLocalReaction(null), 4000);
+                    }}
+                    className="hover:scale-125 transition-transform text-xl p-1"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Leave/End Meeting */}
           {meeting.isHost ? (
             <button
@@ -795,6 +849,12 @@ function RemoteVideoTile({ peer }: { peer: RemotePeer; key?: any }) {
         <span>{peer.name}</span>
         {peer.audioMuted && <MicOff className="w-3.5 h-3.5 text-red-500" />}
       </div>
+
+      {peer.reaction && (
+        <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur px-2.5 py-1.5 rounded-xl text-2xl border border-slate-800 animate-bounce z-10 shadow-lg">
+          {peer.reaction}
+        </div>
+      )}
 
       {peer.handRaised && (
         <div className="absolute top-3 right-3 bg-yellow-500 text-slate-950 px-2 py-1 rounded-md text-xs font-bold flex items-center space-x-1 animate-bounce">
