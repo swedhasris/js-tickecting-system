@@ -4,11 +4,11 @@ import { useAuth } from "../contexts/AuthContext";
 import { Link } from "react-router-dom";
 import html2canvas from "html2canvas";
 
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-gray-100 text-gray-700",
-  Submitted: "bg-blue-100 text-blue-700",
-  Approved: "bg-green-100 text-green-700",
-  Rejected: "bg-red-100 text-red-700",
+const STATUS_COLORS: Record<string, React.CSSProperties> = {
+  Draft:     { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' },
+  Submitted: { backgroundColor: 'rgba(59,130,246,0.15)',  color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' },
+  Approved:  { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
+  Rejected:  { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
 };
 
 const DEFAULT_TASKS = [
@@ -205,7 +205,7 @@ export function TimesheetWeekly() {
             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Week Total</div>
             <div className="text-xl font-bold text-sn-green">{weekTotal.toFixed(0)} mins</div>
           </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${STATUS_COLORS[timesheet?.status] || STATUS_COLORS.Draft}`}>
+          <span style={STATUS_COLORS[timesheet?.status] || STATUS_COLORS.Draft} className="px-3 py-1 rounded-full text-sm font-semibold">
             {timesheet?.status || "Draft"}
           </span>
           {canEdit && (
@@ -218,7 +218,7 @@ export function TimesheetWeekly() {
 
       {/* Rejection banner */}
       {timesheet?.status === "Rejected" && timesheet?.rejectionReason && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-start gap-3">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 p-4 rounded-lg flex items-start gap-3">
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
           <div>
             <div className="font-semibold">Tickets Rejected</div>
@@ -250,11 +250,11 @@ export function TimesheetWeekly() {
         const aiMins = aiEntries.reduce((s: number, c: any) => s + (parseFloat(c.hours_worked) || 0), 0);
         if (aiEntries.length === 0) return null;
         return (
-          <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
             <Bot className="w-5 h-5 text-blue-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <span className="text-sm font-semibold text-blue-800">AI Activity Tracker</span>
-              <span className="text-sm text-blue-600 ml-2">
+              <span className="text-sm font-semibold text-blue-800 dark:text-blue-300">AI Activity Tracker</span>
+              <span className="text-sm text-blue-600 dark:text-blue-400 ml-2">
                 Auto-logged <strong>{aiMins} mins</strong> across <strong>{aiEntries.length}</strong> entries this week
               </span>
             </div>
@@ -289,7 +289,7 @@ export function TimesheetWeekly() {
                   ) : entries.map(entry => (
                     <div key={entry.id} className={`p-2 rounded border text-xs group relative hover:bg-muted/50 transition-colors
                       ${(entry.short_description || '').startsWith('[AI Tracked]')
-                        ? 'bg-blue-50 border-blue-200'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
                         : 'bg-muted/30 border-border'}`}>
                       <div className="font-semibold truncate pr-10 flex items-center gap-1">
                         {(entry.short_description || '').startsWith('[AI Tracked]') && (
@@ -303,10 +303,10 @@ export function TimesheetWeekly() {
                       )}
                       {canEdit && (
                         <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 flex gap-0.5">
-                          <button onClick={() => openEdit(entry)} className="p-1 hover:bg-white rounded" title="Edit">
+                          <button onClick={() => openEdit(entry)} className="p-1 hover:bg-muted rounded" title="Edit">
                             <Pencil className="w-3 h-3" />
                           </button>
-                          <button onClick={() => deleteEntry(entry.id)} className="p-1 hover:bg-red-100 text-red-500 rounded" title="Delete">
+                          <button onClick={() => deleteEntry(entry.id)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded" title="Delete">
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
@@ -379,7 +379,7 @@ export function TimesheetWeekly() {
                 <textarea rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="w-full p-2 border border-border rounded text-sm resize-none" placeholder="Describe the work done..." />
               </div>
               {errors.length > 0 && (
-                <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 p-3 rounded text-sm">
                   {errors.map((e, i) => <div key={i}>• {e}</div>)}
                 </div>
               )}

@@ -12,6 +12,28 @@ export function setFirestoreExhausted(val: boolean) {
   firestoreExhausted = val;
 }
 
+// ---- Performance: In-memory API response cache ----
+const API_CACHE_TTL_MS = 10_000; // 10-second TTL
+const apiCache = new Map<string, { data: any; timestamp: number }>();
+
+function getCachedResponse(cacheKey: string): any | null {
+  const entry = apiCache.get(cacheKey);
+  if (entry && Date.now() - entry.timestamp < API_CACHE_TTL_MS) {
+    return entry.data;
+  }
+  apiCache.delete(cacheKey);
+  return null;
+}
+
+function setCachedResponse(cacheKey: string, data: any): void {
+  apiCache.set(cacheKey, { data, timestamp: Date.now() });
+  // Evict old entries if cache grows too large (max 50 entries)
+  if (apiCache.size > 50) {
+    const oldestKey = apiCache.keys().next().value;
+    if (oldestKey) apiCache.delete(oldestKey);
+  }
+}
+
 interface FallbackListener {
   queryOrDoc: any;
   onNext: (snapshot: any) => void;
@@ -103,9 +125,23 @@ function mapDbTicketToFrontend(t: any): any {
 }
 
 async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
+  // Build a cache key from path + query clauses
+  let cacheKey = path;
+  if (queryObj && queryObj.clauses) {
+    cacheKey += ":" + JSON.stringify(queryObj.clauses);
+  }
+
+  // Check cache first
+  const cached = getCachedResponse(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   console.log(`[Firestore Fallback] Fetching data for path: "${path}"`);
 
   try {
+    let result: any[] = [];
+
     if (path.startsWith("tickets")) {
       // Check if resolved query
       let isResolvedQuery = false;
@@ -123,14 +159,12 @@ async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
       const dbTickets = await res.json();
-      return dbTickets.map(mapDbTicketToFrontend);
-    }
-
-    if (path === "users") {
+      result = dbTickets.map(mapDbTicketToFrontend);
+    } else if (path === "users") {
       const res = await fetch("/api/users");
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
       const dbUsers = await res.json();
-      return dbUsers.map((u: any) => ({
+      result = dbUsers.map((u: any) => ({
         id: u.uid || String(u.id),
         uid: u.uid || String(u.id),
         name: u.name || "",
@@ -139,15 +173,11 @@ async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
         phone: u.phone || "",
         passwordHash: u.password_hash || ""
       }));
-    }
-
-    if (path === "settings_groups") {
+    } else if (path === "settings_groups") {
       const res = await fetch("/api/settings_groups");
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
-      return await res.json();
-    }
-
-    if (path === "sla_breaches") {
+      result = await res.json();
+    } else if (path === "sla_breaches") {
       let url = "/api/sla-breaches/all";
       if (queryObj && queryObj.clauses) {
         const whereClause = queryObj.clauses.find((c: any) => c.type === "where" && (c.field === "assigned_user" || c.field === "assignedTo"));
@@ -157,32 +187,30 @@ async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
       }
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
-      return await res.json();
-    }
-
-    if (path === "sla_policies") {
-      return [
+      result = await res.json();
+    } else if (path === "sla_policies") {
+      result = [
         { id: "p1", name: "P1 SLA", priority: "1 - Critical", category: "", resolutionTimeMinutes: 240, isActive: true },
         { id: "p2", name: "P2 SLA", priority: "2 - High", category: "", resolutionTimeMinutes: 480, isActive: true },
         { id: "p3", name: "P3 SLA", priority: "3 - Moderate", category: "", resolutionTimeMinutes: 1440, isActive: true },
         { id: "p4", name: "P4 SLA", priority: "4 - Low", category: "", resolutionTimeMinutes: 4320, isActive: true }
       ];
-    }
-
-    if (path === "companies") {
+    } else if (path === "companies") {
       const res = await fetch("/api/companies");
       if (!res.ok) return [];
-      return await res.json();
-    }
-
-    if (path.includes("/comments")) {
+      result = await res.json();
+    } else if (path.includes("/comments")) {
       const parts = path.split("/");
       const ticketId = parts[1];
       const res = await fetch(`/api/tickets/${ticketId}`);
       if (!res.ok) return [];
       const data = await res.json();
-      return data.comments || [];
+      result = data.comments || [];
     }
+
+    // Store in cache
+    setCachedResponse(cacheKey, result);
+    return result;
   } catch (err) {
     console.error(`[Firestore Fallback] Error fetching path "${path}":`, err);
   }
@@ -421,7 +449,7 @@ export function onSnapshot(
     };
 
     runPoll();
-    timerId = setInterval(runPoll, 5000);
+    timerId = setInterval(runPoll, 15000); // Optimized: poll every 15s instead of 5s to reduce API calls
 
     const listenerRecord = {
       queryOrDoc,

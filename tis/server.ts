@@ -4566,6 +4566,161 @@ Respond ONLY with JSON: {"summary": "your summary here"}`;
   // ═══ ENTERPRISE EMAIL ENGINE ENDPOINTS ═══
   const { getEmailHealth, processEmailQueue, logEmail, enqueueEmail } = await import('./src/lib/emailEngine');
 
+  // ═══ MICROSOFT 365 EMAIL ENGINE — NEW ADDITIVE MODULE ═══
+  const {
+    ensureM365AuditTable, seedM365Config, getM365Health,
+    testM365Smtp, testM365Imap, sendViaM365, getM365AuditLogs, M365_CONFIG
+  } = await import('./src/lib/m365EmailEngine');
+
+  // Ensure M365 audit table exists
+  await ensureM365AuditTable();
+
+  // Auto-seed M365 config if env var is set
+  if (process.env.M365_AUTO_SEED === 'true') {
+    await seedM365Config();
+  }
+
+  // ── M365: Get mailbox health status ──────────────────────────────────────────
+  app.get('/api/m365/health', async (req, res) => {
+    try {
+      const health = await getM365Health({
+        smtpUser: process.env.M365_SMTP_USER || 'support@technosprint.net',
+        smtpPass: process.env.M365_SMTP_PASS || '',
+        imapUser: process.env.M365_IMAP_USER || 'support@technosprint.net',
+        imapPass: process.env.M365_IMAP_PASS || '',
+      });
+      res.json(health);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── M365: Test SMTP only ──────────────────────────────────────────────────────
+  app.post('/api/m365/test-smtp', async (req, res) => {
+    try {
+      const { smtp_user, smtp_pass } = req.body;
+      const user = smtp_user || process.env.M365_SMTP_USER || 'support@technosprint.net';
+      const pass = smtp_pass || process.env.M365_SMTP_PASS || '';
+      const result = await testM365Smtp(user, pass);
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ ok: false, msg: e.message }); }
+  });
+
+  // ── M365: Test IMAP only ──────────────────────────────────────────────────────
+  app.post('/api/m365/test-imap', async (req, res) => {
+    try {
+      const { imap_user, imap_pass } = req.body;
+      const user = imap_user || process.env.M365_IMAP_USER || 'support@technosprint.net';
+      const pass = imap_pass || process.env.M365_IMAP_PASS || '';
+      const result = await testM365Imap(user, pass);
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ ok: false, msg: e.message }); }
+  });
+
+  // ── M365: Send a test email via M365 SMTP ────────────────────────────────────
+  app.post('/api/m365/send-test', async (req, res) => {
+    try {
+      const { to, smtp_user, smtp_pass } = req.body;
+      const user = smtp_user || process.env.M365_SMTP_USER || 'support@technosprint.net';
+      const pass = smtp_pass || process.env.M365_SMTP_PASS || '';
+      const recipient = to || user;
+      const result = await sendViaM365({
+        smtpUser: user, smtpPass: pass,
+        to: recipient,
+        subject: `[TEST] Microsoft 365 Email Integration — ${new Date().toLocaleString()}`,
+        html: `<div style="font-family:sans-serif;padding:20px">
+          <h2 style="color:#0078d4">✅ Microsoft 365 Integration Working</h2>
+          <p>This test confirms your M365 SMTP connection via <strong>smtp.office365.com:587</strong> is operational.</p>
+          <table style="border-collapse:collapse;margin-top:16px">
+            <tr><td style="padding:6px 12px;font-weight:600;color:#555">Provider</td><td style="padding:6px 12px">Microsoft 365</td></tr>
+            <tr><td style="padding:6px 12px;font-weight:600;color:#555">Mailbox</td><td style="padding:6px 12px">${user}</td></tr>
+            <tr><td style="padding:6px 12px;font-weight:600;color:#555">SMTP</td><td style="padding:6px 12px">smtp.office365.com:587 (STARTTLS)</td></tr>
+            <tr><td style="padding:6px 12px;font-weight:600;color:#555">IMAP</td><td style="padding:6px 12px">outlook.office365.com:993 (SSL/TLS)</td></tr>
+            <tr><td style="padding:6px 12px;font-weight:600;color:#555">Sent at</td><td style="padding:6px 12px">${new Date().toISOString()}</td></tr>
+          </table>
+        </div>`,
+      });
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); }
+  });
+
+  // ── M365: Get audit logs ──────────────────────────────────────────────────────
+  app.get('/api/m365/audit-logs', async (req, res) => {
+    try {
+      const { direction, status, event_type, limit } = req.query as any;
+      const logs = await getM365AuditLogs({
+        limit:      limit ? parseInt(limit) : 200,
+        direction,
+        status,
+        event_type,
+      });
+      res.json(logs);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── M365: Get current config (redacted passwords) ─────────────────────────────
+  app.get('/api/m365/config', async (req, res) => {
+    try {
+      const rows = await query(
+        "SELECT id, company_name, email_address, smtp_host, smtp_port, imap_host, imap_port, encryption, is_active, is_default, updated_at FROM company_email_configs WHERE email_address LIKE '%technosprint.net%' OR smtp_host = 'smtp.office365.com' ORDER BY updated_at DESC LIMIT 1"
+      );
+      res.json({
+        configured: rows.length > 0,
+        config:     rows[0] ?? null,
+        defaults: {
+          smtp_host: M365_CONFIG.SMTP_HOST,
+          smtp_port: M365_CONFIG.SMTP_PORT,
+          imap_host: M365_CONFIG.IMAP_HOST,
+          imap_port: M365_CONFIG.IMAP_PORT,
+          smtp_encryption: M365_CONFIG.SMTP_ENCRYPTION,
+          imap_encryption: M365_CONFIG.IMAP_ENCRYPTION,
+          email_address: M365_CONFIG.EMAIL_ADDRESS,
+        },
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── M365: Email activity stats for dashboard ──────────────────────────────────
+  app.get('/api/m365/stats', async (req, res) => {
+    try {
+      const [received, sent, failed, queue] = await Promise.allSettled([
+        query("SELECT COUNT(*) as cnt FROM email_logs WHERE direction='inbound' AND created_at >= datetime('now','-1 day') OR created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)"),
+        query("SELECT COUNT(*) as cnt FROM email_logs WHERE direction='outbound' AND status='sent' AND (created_at >= datetime('now','-1 day') OR created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY))"),
+        query("SELECT COUNT(*) as cnt FROM email_logs WHERE status='failed' AND (created_at >= datetime('now','-1 day') OR created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY))"),
+        query("SELECT status, COUNT(*) as cnt FROM notifications_queue GROUP BY status"),
+      ]);
+
+      const queueStats: Record<string,number> = {};
+      if (queue.status === 'fulfilled') {
+        queue.value.forEach((r: any) => { queueStats[r.status] = Number(r.cnt); });
+      }
+
+      res.json({
+        emails_received_today: received.status === 'fulfilled' ? (Number(received.value?.[0]?.cnt) || 0) : 0,
+        emails_sent_today:     sent.status === 'fulfilled'     ? (Number(sent.value?.[0]?.cnt)     || 0) : 0,
+        failed_emails_today:   failed.status === 'fulfilled'   ? (Number(failed.value?.[0]?.cnt)   || 0) : 0,
+        queue_pending:         queueStats['pending']   || 0,
+        queue_failed:          queueStats['failed']    || 0,
+        queue_sent:            queueStats['sent']      || 0,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── M365: Trigger manual IMAP poll ───────────────────────────────────────────
+  app.post('/api/m365/poll-now', async (req, res) => {
+    try {
+      // Delegate to the existing OmniChannelEngine (which already handles M365 config)
+      OmniChannelEngine.pollIncomingEmails().catch(() => {});
+      res.json({ success: true, message: 'IMAP poll triggered. Check audit logs for results.' });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── M365: Reseed config from env ─────────────────────────────────────────────
+  app.post('/api/m365/seed-config', async (req, res) => {
+    try {
+      await seedM365Config();
+      res.json({ success: true, message: 'M365 configuration reseeded from environment variables.' });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Health check
   app.get("/api/email/health", async (req, res) => {
     try { res.json(await getEmailHealth()); }

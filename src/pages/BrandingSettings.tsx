@@ -32,7 +32,7 @@ export function BrandingSettings() {
   if (!hasAccess) {
     return (
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg border border-border p-8 text-center">
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-border dark:border-gray-700 p-8 text-center">
           <h2 className="text-xl font-bold text-red-600 mb-2">Access Denied</h2>
           <p className="text-muted-foreground">
             Only Super Admin and Ultra Super Admin can access branding settings.
@@ -134,7 +134,7 @@ export function BrandingSettings() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Company Name */}
-        <div className="bg-white rounded-lg border border-border p-6">
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-border dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Building2 className="w-5 h-5" />
             Company Name
@@ -160,7 +160,7 @@ export function BrandingSettings() {
         </div>
 
         {/* Logo Upload */}
-        <div className="bg-white rounded-lg border border-border p-6">
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-border dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Image className="w-5 h-5" />
             Company Logo
@@ -225,7 +225,7 @@ export function BrandingSettings() {
       </div>
 
       {/* Preview Section */}
-      <div className="bg-white rounded-lg border border-border p-6">
+      <div className="bg-white dark:bg-gray-900 rounded-lg border border-border dark:border-gray-700 p-6">
         <h2 className="text-lg font-semibold mb-4">Live Preview</h2>
         <div className="bg-sn-sidebar text-white p-4 rounded-lg inline-flex items-center gap-3">
           {previewLogo ? (

@@ -5,11 +5,11 @@ import { ShieldAlert, CheckCircle, XCircle, RotateCcw, Eye, X } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
 
-const STATUS_COLORS: Record<string, string> = {
-  Draft:     "bg-gray-100 text-gray-700",
-  Submitted: "bg-blue-100 text-blue-700",
-  Approved:  "bg-green-100 text-green-700",
-  Rejected:  "bg-red-100 text-red-700",
+const STATUS_COLORS: Record<string, React.CSSProperties> = {
+  Draft:     { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' },
+  Submitted: { backgroundColor: 'rgba(59,130,246,0.15)',  color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' },
+  Approved:  { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
+  Rejected:  { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
 };
 
 export function TimesheetApprovals() {
@@ -194,7 +194,7 @@ export function TimesheetApprovals() {
           { label: "Rejected", value: counts.Rejected,  color: "text-red-600" },
           { label: "Draft",    value: counts.Draft,     color: "text-gray-600" },
         ].map(s => (
-          <div key={s.label} className="bg-white border border-border rounded-lg p-4">
+          <div key={s.label} className="bg-card border border-border rounded-lg p-4">
             <div className="text-xs text-muted-foreground uppercase font-bold">{s.label}</div>
             <div className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</div>
           </div>
@@ -202,7 +202,7 @@ export function TimesheetApprovals() {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
         <div className="p-4 border-b border-border bg-muted/10 text-sm font-bold">
           Tickets ({filtered.length})
         </div>
@@ -238,7 +238,7 @@ export function TimesheetApprovals() {
                     </td>
                     <td className="p-3 font-bold text-sm">{(parseFloat(ts.total_hours) || 0).toFixed(0)} mins</td>
                     <td className="p-3">
-                      <span className={cn("px-2 py-0.5 rounded text-xs font-bold", STATUS_COLORS[status] || STATUS_COLORS.Draft)}>
+                      <span style={STATUS_COLORS[status] || STATUS_COLORS.Draft} className="px-2 py-0.5 rounded text-xs font-bold">
                         {status}
                       </span>
                     </td>
@@ -252,11 +252,11 @@ export function TimesheetApprovals() {
                         {status === "Submitted" && (
                           <>
                             <button onClick={() => handleApprove(ts.id)} title="Approve"
-                              className="p-1.5 bg-green-50 border border-green-200 rounded hover:bg-green-100 text-green-700 transition-colors">
+                              className="p-1.5 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded hover:bg-green-100 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 transition-colors">
                               <CheckCircle className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => { setRejectId(ts.id); setRejectReason(""); }} title="Reject"
-                              className="p-1.5 bg-red-50 border border-red-200 rounded hover:bg-red-100 text-red-700 transition-colors">
+                              className="p-1.5 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded hover:bg-red-100 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors">
                               <XCircle className="w-3.5 h-3.5" />
                             </button>
                           </>
@@ -281,14 +281,14 @@ export function TimesheetApprovals() {
       {viewTs && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={e => e.target === e.currentTarget && setViewTs(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden">
+          <div className="bg-card rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
               <h3 className="font-bold">Ticket Details</h3>
               <button onClick={() => setViewTs(null)} className="p-1 hover:bg-muted rounded"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm bg-muted/20 p-4 rounded-lg">
-                <div><span className="text-muted-foreground">Status:</span> <span className={cn("px-2 py-0.5 rounded text-xs font-bold ml-1", STATUS_COLORS[viewTs.status] || "")}>{viewTs.status}</span></div>
+                <div><span className="text-muted-foreground">Status:</span> <span style={STATUS_COLORS[viewTs.status] || STATUS_COLORS.Draft} className="px-2 py-0.5 rounded text-xs font-bold ml-1">{viewTs.status}</span></div>
                 <div><span className="text-muted-foreground">Total:</span> <strong className="ml-1">{(parseFloat(viewTs.total_hours) || 0).toFixed(0)} mins</strong></div>
                 <div><span className="text-muted-foreground">Week:</span> <span className="ml-1">{viewTs.week_start?.substring?.(0,10)} → {viewTs.week_end?.substring?.(0,10)}</span></div>
                 <div><span className="text-muted-foreground">Submitted:</span> <span className="ml-1">{formatDate(viewTs.submitted_at)}</span></div>
@@ -423,10 +423,10 @@ export function TimesheetApprovals() {
       {rejectId && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={e => e.target === e.currentTarget && setRejectId(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-4 border-b border-border flex items-center justify-between bg-red-50">
-              <h3 className="font-bold text-red-700">Reject Ticket</h3>
-              <button onClick={() => setRejectId(null)} className="p-1 hover:bg-red-100 rounded"><X className="w-5 h-5" /></button>
+          <div className="bg-card rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="p-4 border-b border-border flex items-center justify-between bg-red-50 dark:bg-red-900/30">
+              <h3 className="font-bold text-red-700 dark:text-red-400">Reject Ticket</h3>
+              <button onClick={() => setRejectId(null)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/50 rounded"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
               <p className="text-sm text-muted-foreground">Provide a reason — the employee will see this.</p>

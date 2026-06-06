@@ -6,16 +6,16 @@ import { CheckCircle2, Search, Eye, Clock, User, Tag } from "lucide-react";
 import { Link } from "react-router-dom";
 import { cn, formatDate } from "@/lib/utils";
 
-const PRIORITY_COLORS: Record<string, string> = {
-  "1 - Critical": "bg-red-100 text-red-700",
-  "2 - High":     "bg-orange-100 text-orange-700",
-  "3 - Moderate": "bg-blue-100 text-blue-700",
-  "4 - Low":      "bg-green-100 text-green-700",
+const PRIORITY_COLORS: Record<string, React.CSSProperties> = {
+  "1 - Critical": { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
+  "2 - High":     { backgroundColor: 'rgba(249,115,22,0.15)',  color: '#fb923c', border: '1px solid rgba(249,115,22,0.3)' },
+  "3 - Moderate": { backgroundColor: 'rgba(59,130,246,0.15)',  color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' },
+  "4 - Low":      { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  "Resolved": "bg-green-100 text-green-700",
-  "Closed":   "bg-gray-100 text-gray-700",
+const STATUS_COLORS: Record<string, React.CSSProperties> = {
+  "Resolved": { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
+  "Closed":   { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' },
 };
 
 export function ApprovedTickets() {
@@ -91,21 +91,21 @@ export function ApprovedTickets() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white border border-border rounded-xl p-5 flex items-center gap-4">
+        <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
           <CheckCircle2 className="w-10 h-10 text-green-500 opacity-80" />
           <div>
             <div className="text-3xl font-bold text-green-600">{tickets.length}</div>
             <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Resolved</div>
           </div>
         </div>
-        <div className="bg-white border border-green-200 rounded-xl p-5 flex items-center gap-4">
+        <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
           <CheckCircle2 className="w-10 h-10 text-green-600 opacity-80" />
           <div>
             <div className="text-3xl font-bold text-green-600">{resolvedCount}</div>
             <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Resolved</div>
           </div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center gap-4">
+        <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
           <CheckCircle2 className="w-10 h-10 text-gray-500 opacity-80" />
           <div>
             <div className="text-3xl font-bold text-gray-600">{closedCount}</div>
@@ -139,7 +139,7 @@ export function ApprovedTickets() {
       </div>
 
       {/* Tickets Table */}
-      <div className="bg-white border border-border rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -188,12 +188,12 @@ export function ApprovedTickets() {
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", PRIORITY_COLORS[priority] || "bg-gray-100 text-gray-700")}>
+                      <span style={PRIORITY_COLORS[priority] || { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8' }} className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-block">
                         {priority}
                       </span>
                     </td>
                     <td className="p-4">
-                      <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 w-fit", STATUS_COLORS[status] || "bg-gray-100 text-gray-700")}>
+                      <span style={STATUS_COLORS[status] || { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8' }} className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 w-fit">
                         <CheckCircle2 className="w-3 h-3" />
                         {status}
                       </span>

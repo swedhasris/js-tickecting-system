@@ -2,9 +2,16 @@ import { firebaseAvailable, db } from "./firebase";
 import { collection, getDocs, addDoc, query, limit, setDoc, doc } from "firebase/firestore";
 
 export async function seedInitialData() {
+  // Performance: Skip if already seeded in this browser session
+  const SEED_KEY = "connectit_seed_done_v1";
+  if (localStorage.getItem(SEED_KEY)) {
+    return;
+  }
+
   // Skip seeding if Firebase is not configured
   if (!firebaseAvailable) {
     console.log("[Seed] Firebase not available — skipping Firestore seed.");
+    localStorage.setItem(SEED_KEY, "1");
     return;
   }
 
@@ -122,4 +129,7 @@ export async function seedInitialData() {
   } catch (error) {
     console.warn("Seeding skipped or failed:", error);
   }
+
+  // Mark as seeded regardless of outcome to prevent repeated attempts
+  localStorage.setItem(SEED_KEY, "1");
 }

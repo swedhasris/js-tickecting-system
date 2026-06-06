@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-gray-100 text-gray-700",
-  Submitted: "bg-blue-100 text-blue-700",
-  Approved: "bg-green-100 text-green-700",
-  Rejected: "bg-red-100 text-red-700",
+const STATUS_COLORS: Record<string, React.CSSProperties> = {
+  Draft:     { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' },
+  Submitted: { backgroundColor: 'rgba(59,130,246,0.15)',  color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' },
+  Approved:  { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
+  Rejected:  { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
 };
 
 export function TimesheetApprovals() {
@@ -422,7 +422,7 @@ export function TimesheetApprovals() {
                     </td>
                     <td className="p-3 font-bold text-sm">{(parseFloat(ts.total_hours) || 0).toFixed(0)} mins</td>
                     <td className="p-3">
-                      <span className={cn("px-2 py-0.5 rounded text-xs font-bold", STATUS_COLORS[status] || STATUS_COLORS.Draft)}>
+                      <span style={STATUS_COLORS[status] || STATUS_COLORS.Draft} className="px-2 py-0.5 rounded text-xs font-bold">
                         {status}
                       </span>
                     </td>
@@ -476,7 +476,7 @@ export function TimesheetApprovals() {
             </div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm bg-muted/20 p-4 rounded-lg">
-                <div><span className="text-muted-foreground">Status:</span> <span className={cn("px-2 py-0.5 rounded text-xs font-bold ml-1", STATUS_COLORS[viewTs.status] || "")}>{viewTs.status}</span></div>
+                <div><span className="text-muted-foreground">Status:</span> <span style={STATUS_COLORS[viewTs.status] || STATUS_COLORS.Draft} className="px-2 py-0.5 rounded text-xs font-bold ml-1">{viewTs.status}</span></div>
                 <div><span className="text-muted-foreground">Total:</span> <strong className="ml-1">{(parseFloat(viewTs.total_hours) || 0).toFixed(0)} mins</strong></div>
                 <div><span className="text-muted-foreground">Week:</span> <span className="ml-1">{viewTs.week_start?.substring?.(0, 10)} → {viewTs.week_end?.substring?.(0, 10)}</span></div>
                 <div><span className="text-muted-foreground">Submitted:</span> <span className="ml-1">{formatDate(viewTs.submitted_at)}</span></div>

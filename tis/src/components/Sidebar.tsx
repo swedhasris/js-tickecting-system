@@ -104,6 +104,7 @@ export function Sidebar() {
       ultraSuperAdminOnly: true,
       items: [
         { icon: Mail, label: "Email Integration", path: "/email-integrations" },
+        { icon: Mail, label: "M365 Email Monitor", path: "/m365-monitor" },
       ]
     },
     {

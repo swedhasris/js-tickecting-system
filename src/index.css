@@ -993,3 +993,119 @@ html:not(.dark) .dark textarea {
   border: 1px solid #2D3B55 !important;
   color: #FFFFFF !important;
 }
+
+/* =============================================
+   COMPREHENSIVE DARK MODE TEXT VISIBILITY
+   Covers dynamically rendered text from databases,
+   branding settings, and user-generated content.
+   ============================================= */
+
+/* Force all heading elements to be light in dark mode */
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+  color: #f1f5f9 !important;
+}
+
+/* Force paragraph and label text to be readable in dark mode */
+.dark p:not(.text-rose-400):not(.text-rose-500):not(.text-red-500):not(.text-red-600):not([class*="text-blue-"]) {
+  color: #e2e8f0;
+}
+
+.dark label {
+  color: #cbd5e1 !important;
+}
+
+/* Force table cell text to be readable in dark mode */
+.dark td, .dark th {
+  color: #e2e8f0;
+}
+
+/* Ensure any inline style color:black or color:#000 is overridden */
+.dark [style*="color: black"],
+.dark [style*="color:black"],
+.dark [style*="color: #000"],
+.dark [style*="color:#000"],
+.dark [style*="color: rgb(0, 0, 0)"],
+.dark [style*="color: rgb(0,0,0)"] {
+  color: #f1f5f9 !important;
+}
+
+/* Override any inline style color:white in light mode */
+html:not(.dark) [style*="color: white"]:not(.dark *),
+html:not(.dark) [style*="color:white"]:not(.dark *),
+html:not(.dark) [style*="color: #fff"]:not(.dark *),
+html:not(.dark) [style*="color:#fff"]:not(.dark *),
+html:not(.dark) [style*="color: rgb(255, 255, 255)"]:not(.dark *),
+html:not(.dark) [style*="color: rgb(255,255,255)"]:not(.dark *) {
+  color: #0f172a !important;
+}
+
+/* --- Branding / Company Name Visibility --- */
+/* Ensure branding text in sidebar is always visible */
+.dark .bg-sn-sidebar span[title] {
+  color: #60a5fa !important;
+}
+
+/* Branding settings page cards in dark mode */
+.dark .bg-white.rounded-lg {
+  background-color: #111827 !important;
+  border-color: #2D3B55 !important;
+}
+
+.dark .bg-white.rounded-lg h2,
+.dark .bg-white.rounded-lg p,
+.dark .bg-white.rounded-lg label,
+.dark .bg-white.rounded-lg span {
+  color: #e2e8f0 !important;
+}
+
+/* --- Dynamic Text Fallbacks --- */
+/* For text rendered from database values with no specific class */
+.dark .sn-card span,
+.dark .sn-card p,
+.dark .glass-panel span,
+.dark .glass-panel p {
+  color: inherit;
+}
+
+/* Ensure text-foreground is always readable in dark mode */
+.dark .text-foreground {
+  color: #f1f5f9 !important;
+}
+
+/* Force card-foreground text to be light in dark mode */
+.dark .text-card-foreground {
+  color: #f1f5f9 !important;
+}
+
+/* Success/error message banners in dark mode */
+.dark .bg-green-50 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.dark .text-green-700 {
+  color: #6ee7b7 !important;
+}
+
+.dark .text-red-700 {
+  color: #fca5a5 !important;
+}
+
+/* Ensure font-black and font-bold text is visible in dark mode */
+.dark .font-black,
+.dark .font-bold,
+.dark .font-semibold {
+  color: inherit;
+}
+
+/* Logo preview area in branding settings */
+.dark .bg-gray-100 {
+  background-color: #1A2332 !important;
+}

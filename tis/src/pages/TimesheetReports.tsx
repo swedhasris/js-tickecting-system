@@ -57,11 +57,11 @@ export function TimesheetReports() {
   const taskData = Object.entries(taskMap).sort((a, b) => b[1] - a[1]);
   const maxTaskHours = taskData.length ? taskData[0][1] : 1;
 
-  const STATUS_COLORS: Record<string, string> = {
-    Draft: "bg-gray-100 text-gray-700",
-    Submitted: "bg-blue-100 text-blue-700",
-    Approved: "bg-green-100 text-green-700",
-    Rejected: "bg-red-100 text-red-700",
+  const STATUS_COLORS: Record<string, React.CSSProperties> = {
+    Draft:     { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' },
+    Submitted: { backgroundColor: 'rgba(59,130,246,0.15)',  color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' },
+    Approved:  { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
+    Rejected:  { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
   };
 
   return (
@@ -124,11 +124,13 @@ export function TimesheetReports() {
           {/* AI Activity Sessions */}
           {activitySessions.length > 0 && (
             <div className="bg-card rounded-lg border border-border overflow-hidden">
-              <div className="p-4 border-b border-border bg-blue-50 flex items-center justify-between">
+              <div className="p-4 border-b border-border flex items-center justify-between"
+                style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.2)' }}>
                 <div className="flex items-center gap-2">
                   <Bot className="w-4 h-4 text-blue-500" />
-                  <h3 className="font-semibold text-blue-800">AI Activity Tracker Sessions</h3>
-                  <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                  <h3 className="font-semibold" style={{ color: '#60a5fa' }}>AI Activity Tracker Sessions</h3>
+                  <span style={{ backgroundColor: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' }}
+                    className="text-xs font-bold px-2 py-0.5 rounded-full">
                     {activitySessions.length}
                   </span>
                 </div>
@@ -168,9 +170,14 @@ export function TimesheetReports() {
                           </td>
                           <td className="p-3 text-right font-bold text-sm">{durStr}</td>
                           <td className="p-3 text-center">
-                            <span className={`px-2 py-0.5 rounded text-xs font-semibold
-                              ${s.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {s.status === 'completed' ? 'Completed' : 'Active'}
+                            <span style={
+                              s.status === 'completed'
+                                ? { backgroundColor: 'rgba(34,197,94,0.15)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' }
+                                : s.status === 'active'
+                                ? { backgroundColor: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' }
+                                : { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' }
+                            } className="px-2 py-0.5 rounded text-xs font-semibold">
+                              {s.status === 'completed' ? 'Completed' : s.status === 'active' ? 'Active' : s.status || 'Unknown'}
                             </span>
                           </td>
                           <td className="p-3 text-sm">
@@ -197,9 +204,10 @@ export function TimesheetReports() {
                 const aiMins = aiCards.reduce((s: number, c: any) => s + (parseFloat(c.hours_worked) || 0), 0);
                 if (aiCards.length === 0) return null;
                 return (
-                  <div className="p-3 bg-blue-50 border-t border-blue-100 flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs text-blue-700">
+                  <div className="p-3 border-t flex items-center gap-2"
+                    style={{ backgroundColor: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.2)' }}>
+                    <Zap className="w-3.5 h-3.5" style={{ color: '#60a5fa' }} />
+                    <span className="text-xs" style={{ color: '#60a5fa' }}>
                       AI Tracker auto-logged <strong>{aiMins} mins</strong> across <strong>{aiCards.length}</strong> time entries in your timesheets
                     </span>
                   </div>
@@ -231,7 +239,7 @@ export function TimesheetReports() {
                       <td className="p-3 text-sm font-medium">{ts.week_start} → {ts.week_end}</td>
                       <td className="p-3 text-right font-bold">{(parseFloat(ts.total_hours) || 0).toFixed(0)} mins</td>
                       <td className="p-3 text-center">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${STATUS_COLORS[ts.status] || STATUS_COLORS.Draft}`}>{ts.status}</span>
+                        <span style={STATUS_COLORS[ts.status] || STATUS_COLORS.Draft} className="px-2 py-0.5 rounded text-xs font-semibold">{ts.status}</span>
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">
                         {ts.submitted_at ? new Date(ts.submitted_at).toLocaleDateString() : "—"}

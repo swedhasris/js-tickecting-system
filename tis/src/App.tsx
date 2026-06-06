@@ -52,6 +52,7 @@ const BrandingSettings = lazy(() => import("./pages/BrandingSettings").then(m =>
 const ActivityTracker = lazy(() => import("./pages/ActivityTracker").then(m => ({ default: m.ActivityTracker })));
 const CustomDropdownManager = lazy(() => import("./pages/CustomDropdownManager").then(m => ({ default: m.CustomDropdownManager })));
 const EmailIntegrations = lazy(() => import("./pages/EmailIntegrations").then(m => ({ default: m.EmailIntegrations })));
+const M365EmailMonitor = lazy(() => import("./pages/M365EmailMonitor").then(m => ({ default: m.M365EmailMonitor })));
 const IncidentCategoryManagement = lazy(() => import("./pages/IncidentCategoryManagement").then(m => ({ default: m.IncidentCategoryManagement })));
 
 
@@ -390,6 +391,14 @@ function AppBody() {
             element={
               <ProtectedRoute>
                 <EmailIntegrations />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/m365-monitor"
+            element={
+              <ProtectedRoute>
+                <M365EmailMonitor />
               </ProtectedRoute>
             }
           />

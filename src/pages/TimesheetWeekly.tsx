@@ -4,9 +4,12 @@ import { useAuth } from "../contexts/AuthContext";
 import { Link } from "react-router-dom";
 import html2canvas from "html2canvas";
 
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-gray-100 text-gray-700",
-  Submitted: "bg-blue-100 text-blue-700",
+const STATUS_COLORS: Record<string, React.CSSProperties> = {
+  Draft:     { backgroundColor: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: '1px solid rgba(100,116,139,0.3)' },
+  Submitted: { backgroundColor: 'rgba(59,130,246,0.15)',  color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)' },
+  Approved:  { backgroundColor: 'rgba(34,197,94,0.15)',   color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' },
+  Rejected:  { backgroundColor: 'rgba(239,68,68,0.15)',   color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' },
+};
   Approved: "bg-green-100 text-green-700",
   Rejected: "bg-red-100 text-red-700",
 };
@@ -206,7 +209,7 @@ export function TimesheetWeekly() {
             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Week Total</div>
             <div className="text-xl font-bold text-sn-green">{weekTotal.toFixed(0)} mins</div>
           </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${STATUS_COLORS[timesheet?.status] || STATUS_COLORS.Draft}`}>
+          <span style={STATUS_COLORS[timesheet?.status] || STATUS_COLORS.Draft} className="px-3 py-1 rounded-full text-sm font-semibold">
             {timesheet?.status || "Draft"}
           </span>
           {canEdit && (
