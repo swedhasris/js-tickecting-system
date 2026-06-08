@@ -28,6 +28,9 @@ export function TicketDetail() {
 
   const [ticket, setTicket] = useState<any>(null);
   const [editedTicket, setEditedTicket] = useState<any>(null);
+  const customFieldsRef = useRef<any>(null);
+  const canEdit = profile?.role ? (ROLE_HIERARCHY[profile.role as Role] >= ROLE_HIERARCHY["agent"]) : false;
+
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   const [workNote, setWorkNote] = useState("");
@@ -148,6 +151,12 @@ export function TicketDetail() {
   // Note: Local Firestore timer syncing is removed in favor of global AI Activity Tracker.
 
   useEffect(() => {
+    setTicket(null);
+    setEditedTicket(null);
+    customFieldsRef.current = null;
+  }, [id]);
+
+  useEffect(() => {
     if (!id) return;
     
     // Resolve ticket_number to actual document ID if needed
@@ -171,7 +180,25 @@ export function TicketDetail() {
       if (docSnapshot.exists()) {
         const data = { id: docSnapshot.id, ...docSnapshot.data() };
         setTicket(data);
-        setEditedTicket((prev: any) => prev ? prev : data);
+        setEditedTicket((prev: any) => {
+          const mergedFields = customFieldsRef.current || {};
+          if (prev && prev.status !== undefined) {
+            return {
+              ...prev,
+              customFields: {
+                ...(prev.customFields || {}),
+                ...mergedFields
+              }
+            };
+          }
+          return {
+            ...data,
+            customFields: {
+              ...(data.customFields || {}),
+              ...mergedFields
+            }
+          };
+        });
       } else {
         navigate("/tickets");
       }
@@ -187,13 +214,17 @@ export function TicketDetail() {
       .then(r => r.json())
       .then(savedFields => {
         if (savedFields && typeof savedFields === 'object') {
-          setEditedTicket((prev: any) => ({
-            ...prev,
-            customFields: {
-              ...(prev?.customFields || {}),
-              ...savedFields
-            }
-          }));
+          customFieldsRef.current = savedFields;
+          setEditedTicket((prev: any) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              customFields: {
+                ...(prev.customFields || {}),
+                ...savedFields
+              }
+            };
+          });
         }
       })
       .catch(err => console.error("Error fetching custom fields mapping:", err));
@@ -914,6 +945,24 @@ export function TicketDetail() {
 
   if (!ticket) return null;
 
+  const createdTime = ticket.createdAt?.seconds 
+    ? new Date(ticket.createdAt.seconds * 1000) 
+    : (typeof ticket.createdAt === 'string' ? new Date(ticket.createdAt) : new Date());
+
+  const fallbackResponseDeadline = ticket.responseDeadline || 
+    (ticket.createdAt ? calculateSLADeadline(createdTime, 2, {
+      businessHours: ticket.businessHours,
+      excludeWeekends: ticket.excludeWeekends,
+      excludeHolidays: ticket.excludeHolidays
+    }).toISOString() : undefined);
+
+  const fallbackResolutionDeadline = ticket.resolutionDeadline || 
+    (ticket.createdAt ? calculateSLADeadline(createdTime, 24, {
+      businessHours: ticket.businessHours,
+      excludeWeekends: ticket.excludeWeekends,
+      excludeHolidays: ticket.excludeHolidays
+    }).toISOString() : undefined);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -937,22 +986,22 @@ export function TicketDetail() {
           <div className="flex items-center gap-4 border-r border-border pr-6 hidden md:flex">
             <SLATimer
               label="Resp SLA"
-              deadline={ticket.responseDeadline}
+              deadline={fallbackResponseDeadline}
               startTime={ticket.responseSlaStartTime || ticket.createdAt}
-              metAt={ticket.firstResponseAt || (editedTicket.status !== "New" ? new Date().toISOString() : undefined)}
-              isPaused={editedTicket.status === "On Hold" || editedTicket.status === "Waiting for Customer" || editedTicket.status === "Awaiting User" || editedTicket.status === "Awaiting Vendor"}
+              metAt={ticket.firstResponseAt || (editedTicket?.status && editedTicket.status !== "New" ? new Date().toISOString() : undefined)}
+              isPaused={editedTicket?.status === "On Hold" || editedTicket?.status === "Waiting for Customer" || editedTicket?.status === "Awaiting User" || editedTicket?.status === "Awaiting Vendor"}
               onHoldStart={ticket.onHoldStart}
               totalPausedTime={ticket.totalPausedTime}
             />
             <SLATimer
               label="Res SLA"
-              deadline={ticket.resolutionDeadline}
+              deadline={fallbackResolutionDeadline}
               startTime={ticket.resolutionSlaStartTime || ticket.createdAt}
-              metAt={ticket.resolvedAt || (editedTicket.status === "Resolved" || editedTicket.status === "Closed" ? new Date().toISOString() : undefined)}
-              isPaused={editedTicket.status === "On Hold" || editedTicket.status === "Waiting for Customer" || editedTicket.status === "Awaiting User" || editedTicket.status === "Awaiting Vendor"}
+              metAt={ticket.resolvedAt || (editedTicket?.status === "Resolved" || editedTicket?.status === "Closed" ? new Date().toISOString() : undefined)}
+              isPaused={editedTicket?.status === "On Hold" || editedTicket?.status === "Waiting for Customer" || editedTicket?.status === "Awaiting User" || editedTicket?.status === "Awaiting Vendor"}
               onHoldStart={ticket.onHoldStart}
               totalPausedTime={ticket.totalPausedTime}
-              waitUntil={ticket.firstResponseAt || (editedTicket.status !== "New" ? new Date().toISOString() : null)}
+              waitUntil={ticket.firstResponseAt || (editedTicket?.status && editedTicket.status !== "New" ? new Date().toISOString() : null)}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -1072,12 +1121,15 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Affected User</label>
                 <div className="col-span-2 flex gap-1">
                   <input
-                    readOnly
+                    readOnly={!canEdit}
                     value={editedTicket?.affectedUser || ""}
                     onChange={(e) => updateLocalField("affectedUser", e.target.value)}
-                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className={cn(
+                      "flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8",
+                      canEdit ? "bg-white" : "bg-muted/30"
+                    )}
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={!canEdit}><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1085,10 +1137,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Business phone</label>
                 <input
-                  readOnly
+                  readOnly={!canEdit}
                   value={editedTicket?.businessPhone || ""}
                   onChange={(e) => updateLocalField("businessPhone", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 />
               </div>
 
@@ -1097,12 +1152,15 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Location</label>
                 <div className="col-span-2 flex gap-1">
                   <input
-                    readOnly
+                    readOnly={!canEdit}
                     value={editedTicket?.location || ""}
                     onChange={(e) => updateLocalField("location", e.target.value)}
-                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className={cn(
+                      "flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8",
+                      canEdit ? "bg-white" : "bg-muted/30"
+                    )}
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={!canEdit}><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1110,13 +1168,16 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Category</label>
                 <select
-                  disabled
+                  disabled={!canEdit}
                   value={editedTicket?.categoryId || ""}
                   onChange={(e) => {
                     const category = visibleCategories.find((item) => item.id === e.target.value);
                     setEditedTicket((prev: any) => ({ ...prev, categoryId: e.target.value, category: category?.name || "", subcategoryId: "", subcategory: "", serviceId: "", service: "", serviceProvider: "", assignmentGroup: "" }));
                   }}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none h-8 transition-colors"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs outline-none h-8 transition-colors",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 >
                   {visibleCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
@@ -1176,12 +1237,15 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Configuration item</label>
                 <div className="col-span-2 flex gap-1">
                   <input
-                    readOnly
+                    readOnly={!canEdit}
                     value={editedTicket?.configurationItem || ""}
                     onChange={(e) => updateLocalField("configurationItem", e.target.value)}
-                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className={cn(
+                      "flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8",
+                      canEdit ? "bg-white" : "bg-muted/30"
+                    )}
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={!canEdit}><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1190,12 +1254,15 @@ export function TicketDetail() {
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Computer Name</label>
                 <div className="col-span-2 flex gap-1">
                   <input
-                    readOnly
+                    readOnly={!canEdit}
                     value={editedTicket?.computerName || ""}
                     onChange={(e) => updateLocalField("computerName", e.target.value)}
-                    className="flex-grow p-1.5 bg-muted/30 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8"
+                    className={cn(
+                      "flex-grow p-1.5 border border-border rounded text-xs outline-none focus:ring-1 focus:ring-sn-green h-8",
+                      canEdit ? "bg-white" : "bg-muted/30"
+                    )}
                   />
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={!canEdit}><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1203,10 +1270,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Impact</label>
                 <select
-                  disabled
+                  disabled={!canEdit}
                   value={editedTicket?.impact || ""}
                   onChange={(e) => updateLocalField("impact", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 >
                   <option>1 - High</option>
                   <option>2 - Medium</option>
@@ -1218,10 +1288,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Urgency</label>
                 <select
-                  disabled
+                  disabled={!canEdit}
                   value={editedTicket?.urgency || ""}
                   onChange={(e) => updateLocalField("urgency", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs h-8 outline-none focus:ring-1 focus:ring-sn-green transition-colors",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 >
                   <option>1 - High</option>
                   <option>2 - Medium</option>
@@ -1239,7 +1312,7 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Knowledge Article Used?</label>
                 <input
-                  disabled
+                  disabled={!canEdit}
                   type="checkbox"
                   checked={editedTicket?.knowledgeArticleUsed || false}
                   onChange={(e) => updateLocalField("knowledgeArticleUsed", e.target.checked as any)}
@@ -1264,7 +1337,7 @@ export function TicketDetail() {
               {/* State */}
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">State</label>
-                <select disabled value={editedTicket?.status || ""} onChange={(e) => updateLocalField("status", e.target.value)} className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none h-8 transition-colors">
+                <select disabled={!canEdit} value={editedTicket?.status || ""} onChange={(e) => updateLocalField("status", e.target.value)} className={cn("col-span-2 p-1.5 border border-border rounded text-xs outline-none h-8 transition-colors", canEdit ? "bg-white" : "bg-muted/30")}>
                   {["New", "In Progress", "On Hold", "Awaiting User", "Awaiting Vendor", "Resolved", "Closed", "Canceled"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
@@ -1273,14 +1346,14 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Assignment group</label>
                 <div className="col-span-2 flex gap-1">
-                  <select className="flex-grow p-1.5 border border-border rounded text-xs outline-none h-8 focus:ring-1 focus:ring-sn-green" value={editedTicket?.assignmentGroup || ""} onChange={(e) => updateLocalField("assignmentGroup", e.target.value)}>
+                  <select disabled={!canEdit} className={cn("flex-grow p-1.5 border border-border rounded text-xs outline-none h-8 focus:ring-1 focus:ring-sn-green", canEdit ? "bg-white" : "bg-muted/30")} value={editedTicket?.assignmentGroup || ""} onChange={(e) => updateLocalField("assignmentGroup", e.target.value)}>
                     <option value="">-- None --</option>
                     {editedTicket?.assignmentGroup && !visibleGroups.some(g => g.name === editedTicket.assignmentGroup) && (
                       <option value={editedTicket.assignmentGroup}>{editedTicket.assignmentGroup}</option>
                     )}
                     {(visibleGroups.length > 0 ? visibleGroups : groups.filter(g => g.status === 'active')).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
                   </select>
-                  <Button variant="outline" size="sm" className="h-8 w-8 p-0"><Search className="w-3 h-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={!canEdit}><Search className="w-3 h-3" /></Button>
                 </div>
               </div>
 
@@ -1288,7 +1361,7 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Assigned to</label>
                 <div className="col-span-2 flex gap-1">
-                  <select className="flex-grow p-1.5 border border-border rounded text-xs outline-none h-8 focus:ring-1 focus:ring-sn-green" value={editedTicket?.assignedTo || ""} onChange={(e) => updateLocalField("assignedTo", e.target.value)}>
+                  <select disabled={!canEdit} className={cn("flex-grow p-1.5 border border-border rounded text-xs outline-none h-8 focus:ring-1 focus:ring-sn-green", canEdit ? "bg-white" : "bg-muted/30")} value={editedTicket?.assignedTo || ""} onChange={(e) => updateLocalField("assignedTo", e.target.value)}>
                     <option value="">-- None --</option>
                     {editedTicket?.assignedTo && !filteredAgents.some(a => a.id === editedTicket.assignedTo || a.uid === editedTicket.assignedTo) && (
                       <option value={editedTicket.assignedTo}>{editedTicket.assignedToName || editedTicket.assignedTo} (Current)</option>
@@ -1304,6 +1377,7 @@ export function TicketDetail() {
                     size="sm"
                     className="h-8 px-2 bg-sn-green/10 text-sn-green border-sn-green/20 hover:bg-sn-green/20"
                     title="Auto-Assign"
+                    disabled={!canEdit}
                     onClick={() => {
                       if (filteredAgents.length === 0) return;
                       const leastLoaded = [...filteredAgents].sort((a, b) => (a.currentWorkload || 0) - (b.currentWorkload || 0))[0];
@@ -1328,7 +1402,7 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Acknowledged</label>
                 <input
-                  disabled
+                  disabled={!canEdit}
                   type="checkbox"
                   checked={editedTicket?.acknowledged || false}
                   onChange={(e) => updateLocalField("acknowledged", e.target.checked as any)}
@@ -1340,10 +1414,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Channel</label>
                 <select
-                  disabled
+                  disabled={!canEdit}
                   value={editedTicket?.channel || "Self-service"}
                   onChange={(e) => updateLocalField("channel", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 >
                   <option>Self-service</option>
                   <option>Email</option>
@@ -1357,10 +1434,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Password Reset?</label>
                 <select
-                  disabled
+                  disabled={!canEdit}
                   value={editedTicket?.passwordReset || "No"}
                   onChange={(e) => updateLocalField("passwordReset", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 >
                   <option>No</option>
                   <option>Yes</option>
@@ -1371,10 +1451,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Rackspace Ticket No</label>
                 <input
-                  readOnly
+                  readOnly={!canEdit}
                   value={editedTicket?.rackspaceTicketNo || ""}
                   onChange={(e) => updateLocalField("rackspaceTicketNo", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 />
               </div>
 
@@ -1382,10 +1465,13 @@ export function TicketDetail() {
               <div className="grid grid-cols-3 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Additional Information</label>
                 <input
-                  readOnly
+                  readOnly={!canEdit}
                   value={editedTicket?.additionalInformation || ""}
                   onChange={(e) => updateLocalField("additionalInformation", e.target.value)}
-                  className="col-span-2 p-1.5 bg-muted/30 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green"
+                  className={cn(
+                    "col-span-2 p-1.5 border border-border rounded text-xs h-8 focus:ring-1 focus:ring-sn-green",
+                    canEdit ? "bg-white" : "bg-muted/30"
+                  )}
                 />
               </div>
 
@@ -1401,7 +1487,7 @@ export function TicketDetail() {
             <div className="col-span-1 md:col-span-2 mt-4 space-y-4">
               <div className="grid grid-cols-6 items-center gap-4">
                 <label className="text-[11px] text-right font-medium text-muted-foreground uppercase leading-tight">Short description</label>
-                <input readOnly className="col-span-5 p-1.5 bg-muted/30 border border-border rounded text-xs outline-none h-8" value={editedTicket?.title || ""} onChange={(e) => updateLocalField("title", e.target.value)} />
+                <input readOnly={!canEdit} className={cn("col-span-5 p-1.5 border border-border rounded text-xs outline-none h-8", canEdit ? "bg-white" : "bg-muted/30")} value={editedTicket?.title || ""} onChange={(e) => updateLocalField("title", e.target.value)} />
               </div>
             </div>
           </div>
@@ -1617,19 +1703,19 @@ export function TicketDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <SLATimer
                     label="Response"
-                    deadline={ticket.responseDeadline}
+                    deadline={fallbackResponseDeadline}
                     metAt={ticket.firstResponseAt}
-                    startTime={ticket.responseSlaStartTime}
+                    startTime={ticket.responseSlaStartTime || ticket.createdAt}
                     isPaused={ticket.status === 'On Hold' || ticket.status === 'Awaiting User'}
                     onHoldStart={ticket.onHoldStart}
                     totalPausedTime={ticket.totalPausedTime}
                   />
                   <SLATimer
                     label="Resolution"
-                    deadline={ticket.resolutionDeadline}
+                    deadline={fallbackResolutionDeadline}
                     metAt={ticket.resolvedAt}
-                    startTime={ticket.resolutionSlaStartTime}
-                    waitUntil={ticket.firstResponseAt || (editedTicket.status !== "New" ? new Date().toISOString() : null)}
+                    startTime={ticket.resolutionSlaStartTime || ticket.createdAt}
+                    waitUntil={ticket.firstResponseAt || (editedTicket?.status && editedTicket.status !== "New" ? new Date().toISOString() : null)}
                     isPaused={ticket.status === 'On Hold' || ticket.status === 'Awaiting User'}
                     onHoldStart={ticket.onHoldStart}
                     totalPausedTime={ticket.totalPausedTime}
@@ -1677,9 +1763,9 @@ export function TicketDetail() {
                     </div>
                     <SLATimer
                       label="Live Response"
-                      deadline={ticket.responseDeadline}
+                      deadline={fallbackResponseDeadline}
                       metAt={ticket.firstResponseAt}
-                      startTime={ticket.responseSlaStartTime}
+                      startTime={ticket.responseSlaStartTime || ticket.createdAt}
                       isPaused={ticket.status === 'On Hold'}
                       onHoldStart={ticket.onHoldStart}
                       totalPausedTime={ticket.totalPausedTime}
@@ -1692,14 +1778,14 @@ export function TicketDetail() {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-black uppercase text-slate-500">Resolution Performance</span>
-                      <span className="text-xs font-mono font-bold text-slate-700">Target: {ticket.resolutionDeadline ? new Date(ticket.resolutionDeadline).toLocaleTimeString() : '--'}</span>
+                      <span className="text-xs font-mono font-bold text-slate-700">Target: {fallbackResolutionDeadline ? new Date(fallbackResolutionDeadline).toLocaleTimeString() : '--'}</span>
                     </div>
                     <SLATimer
                       label="Live Resolution"
-                      deadline={ticket.resolutionDeadline}
+                      deadline={fallbackResolutionDeadline}
                       metAt={ticket.resolvedAt}
-                      startTime={ticket.resolutionSlaStartTime}
-                      waitUntil={ticket.firstResponseAt || (editedTicket.status !== "New" ? new Date().toISOString() : null)}
+                      startTime={ticket.resolutionSlaStartTime || ticket.createdAt}
+                      waitUntil={ticket.firstResponseAt || (editedTicket?.status && editedTicket.status !== "New" ? new Date().toISOString() : null)}
                       isPaused={ticket.status === 'On Hold'}
                       onHoldStart={ticket.onHoldStart}
                       totalPausedTime={ticket.totalPausedTime}

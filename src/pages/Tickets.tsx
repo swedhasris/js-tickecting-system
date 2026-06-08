@@ -544,7 +544,20 @@ export function Tickets() {
         affectedUser: newTicket.affectedUser,
         affectedUserEmail: newTicket.affectedUserEmail,
         reportingUserEmail: newTicket.callerEmail,
-        customFields: newTicket.customFields
+        customFields: newTicket.customFields,
+        // SLA tracking fields
+        responseDeadline: responseDeadline.toISOString(),
+        resolutionDeadline: null,
+        responseSlaStartTime: now.toISOString(),
+        resolutionSlaStartTime: null,
+        responseSlaStatus,
+        resolutionSlaStatus: "Pending",
+        slaResolutionHours: matchingPolicy.resolutionTimeHours || 24,
+        slaPolicy: matchingPolicy.name || "Default SLA",
+        sla_name: matchingPolicy.name || "Default SLA",
+        slaDelayMeta: null,
+        slaDelayLogs: [],
+        totalPausedTime: 0
       };
 
       console.log("Sending ticket creation payload to API:", apiPayload);

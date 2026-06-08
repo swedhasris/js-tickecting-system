@@ -12,3 +12,5 @@ demo-mysql-1
 nexus-demo
 public/captures
 public/uploads
+*.sqlite-shm
+*.sqlite-wal

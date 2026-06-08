@@ -492,6 +492,9 @@ async function initSQLiteSchema() {
       next_retry_at DATETIME,
       email_type TEXT DEFAULT 'notification',
       config_id INTEGER,
+      company_id TEXT,
+      email_integration_id INTEGER,
+      mailbox_used TEXT,
       sent_at DATETIME,
       received_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -6817,6 +6820,19 @@ Respond in a conversational, friendly tone.`,
         if (!tsmColNames.includes("ticket_id")) {
           await db.exec("ALTER TABLE ts_meetings ADD COLUMN ticket_id TEXT");
         }
+
+        // email_logs columns needed by omniChannelEngine
+        const emailLogCols = await db.all("PRAGMA table_info(email_logs)");
+        const emailLogColNames = emailLogCols.map((c: any) => c.name);
+        if (!emailLogColNames.includes("company_id")) {
+          await db.exec("ALTER TABLE email_logs ADD COLUMN company_id TEXT");
+        }
+        if (!emailLogColNames.includes("email_integration_id")) {
+          await db.exec("ALTER TABLE email_logs ADD COLUMN email_integration_id INTEGER");
+        }
+        if (!emailLogColNames.includes("mailbox_used")) {
+          await db.exec("ALTER TABLE email_logs ADD COLUMN mailbox_used TEXT");
+        }
       } else {
         const checkAndAddColumn = async (table: string, col: string, type: string) => {
           try {
@@ -6858,6 +6874,11 @@ Respond in a conversational, friendly tone.`,
         await checkAndAddColumn("ts_meetings", "timeline", "TEXT");
         await checkAndAddColumn("ts_meetings", "recurrence", "VARCHAR(50)");
         await checkAndAddColumn("ts_meetings", "ticket_id", "VARCHAR(50)");
+
+        // email_logs columns needed by omniChannelEngine
+        await checkAndAddColumn("email_logs", "company_id", "TEXT");
+        await checkAndAddColumn("email_logs", "email_integration_id", "INTEGER");
+        await checkAndAddColumn("email_logs", "mailbox_used", "TEXT");
       }
       console.log("[DB Migration] Email columns verified/added to tickets table.");
 
