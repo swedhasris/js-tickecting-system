@@ -1,0 +1,178 @@
+version: "3.9"
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Ticklora ITSM — Microservices Architecture
+# ════════════════════════════════════════════════════════════════════════════════
+#
+# Services:
+#   gateway          — nginx reverse proxy  → :3000  (public)
+#   core-service     — Tickets/Users/SLA    → :3001
+#   integration-svc  — Email/Graph/AI       → :3002
+#   activity-service — Tracker/Screenshots  → :3003
+#   mysql            — MySQL 8              → :3306
+#   frontend         — React + Vite         → :5173
+#
+# Start: docker-compose up --build
+# ════════════════════════════════════════════════════════════════════════════════
+
+networks:
+  ticklora:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  uploads_data:
+
+services:
+
+  # ── MySQL ────────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: ticklora-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-ticklora2026}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-connectit_db}
+      MYSQL_USER:          ${MYSQL_USER:-ticklora}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD:-ticklora2026}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - ticklora
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-ticklora2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Core Service ─────────────────────────────────────────────────────────────
+  core-service:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: ticklora-core
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      CORE_PORT:        3001
+      MYSQL_HOST:       mysql
+      MYSQL_PORT:       3306
+      MYSQL_USER:       ${MYSQL_USER:-root}
+      MYSQL_PASSWORD:   ${MYSQL_PASSWORD:-ticklora2026}
+      MYSQL_DATABASE:   ${MYSQL_DATABASE:-connectit_db}
+      NODE_ENV:         ${NODE_ENV:-production}
+    ports:
+      - "3001:3001"
+    networks:
+      - ticklora
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Integration Service ───────────────────────────────────────────────────────
+  integration-service:
+    build:
+      context: ./integration-service
+      dockerfile: Dockerfile
+    container_name: ticklora-integration
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      INTEGRATION_PORT:     3002
+      MYSQL_HOST:           mysql
+      MYSQL_PORT:           3306
+      MYSQL_USER:           ${MYSQL_USER:-root}
+      MYSQL_PASSWORD:       ${MYSQL_PASSWORD:-ticklora2026}
+      MYSQL_DATABASE:       ${MYSQL_DATABASE:-connectit_db}
+      GEMINI_API_KEY:       ${GEMINI_API_KEY:-}
+      SMTP_HOST:            ${SMTP_HOST:-}
+      SMTP_PORT:            ${SMTP_PORT:-465}
+      SMTP_USER:            ${SMTP_USER:-}
+      SMTP_PASS:            ${SMTP_PASS:-}
+      M365_SMTP_USER:       ${M365_SMTP_USER:-support@technosprint.net}
+      M365_SMTP_PASS:       ${M365_SMTP_PASS:-}
+      M365_IMAP_USER:       ${M365_IMAP_USER:-support@technosprint.net}
+      M365_IMAP_PASS:       ${M365_IMAP_PASS:-}
+      GRAPH_TENANT_ID:      ${GRAPH_TENANT_ID:-}
+      GRAPH_CLIENT_ID:      ${GRAPH_CLIENT_ID:-}
+      GRAPH_CLIENT_SECRET:  ${GRAPH_CLIENT_SECRET:-}
+      GRAPH_USER_EMAIL:     ${GRAPH_USER_EMAIL:-support@technosprint.net}
+      NODE_ENV:             ${NODE_ENV:-production}
+    ports:
+      - "3002:3002"
+    networks:
+      - ticklora
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Activity Service ──────────────────────────────────────────────────────────
+  activity-service:
+    build:
+      context: ./activity-service
+      dockerfile: Dockerfile
+    container_name: ticklora-activity
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      ACTIVITY_PORT:  3003
+      MYSQL_HOST:     mysql
+      MYSQL_PORT:     3306
+      MYSQL_USER:     ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ticklora2026}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-connectit_db}
+      NODE_ENV:       ${NODE_ENV:-production}
+    ports:
+      - "3003:3003"
+    volumes:
+      - uploads_data:/app/public/uploads
+    networks:
+      - ticklora
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── React Frontend ────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../tis
+      dockerfile: Dockerfile.frontend
+    container_name: ticklora-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE: ""
+      NODE_ENV: ${NODE_ENV:-production}
+    networks:
+      - ticklora
+
+  # ── Gateway (nginx) ────────────────────────────────────────────────────────────
+  gateway:
+    image: nginx:alpine
+    container_name: ticklora-gateway
+    restart: unless-stopped
+    depends_on:
+      - core-service
+      - integration-service
+      - activity-service
+      - frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - ticklora

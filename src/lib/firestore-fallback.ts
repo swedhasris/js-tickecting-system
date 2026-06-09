@@ -16,6 +16,46 @@ export function setFirestoreExhausted(val: boolean) {
 const API_CACHE_TTL_MS = 10_000; // 10-second TTL
 const apiCache = new Map<string, { data: any; timestamp: number }>();
 
+// Prefetch users map to get emails/names synchronously
+const userEmailMap = new Map<string, string>();
+const userNameMap = new Map<string, string>();
+let usersPrefetched = false;
+
+async function prefetchUsers() {
+  if (usersPrefetched) return;
+  try {
+    const res = await fetch("/api/users");
+    if (res.ok) {
+      const dbUsers = await res.json();
+      dbUsers.forEach((u: any) => {
+        const uid = u.uid || String(u.id);
+        if (uid) {
+          userEmailMap.set(uid, u.email || "");
+          userNameMap.set(uid, u.name || "");
+        }
+      });
+      usersPrefetched = true;
+    }
+  } catch (err) {
+    console.error("[Firestore Fallback] Prefetch users failed:", err);
+  }
+}
+
+// Intercept window.fetch to clear API response cache on writes
+const originalFetch = window.fetch;
+window.fetch = async function (...args: any[]) {
+  const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url ? args[0].url : "");
+  const options = args[1] || {};
+  const method = (options.method || "GET").toUpperCase();
+  
+  if (method !== "GET" && (url.includes("/api/tickets") || url.includes("/api/settings") || url.includes("/api/users"))) {
+    console.log(`[Firestore Fallback] Write operation detected: ${method} ${url}. Evicting API cache.`);
+    apiCache.clear();
+  }
+  
+  return originalFetch.apply(this, args);
+};
+
 function getCachedResponse(cacheKey: string): any | null {
   const entry = apiCache.get(cacheKey);
   if (entry && Date.now() - entry.timestamp < API_CACHE_TTL_MS) {
@@ -79,12 +119,15 @@ export class FallbackDocumentReference {
 // Map db ticket to frontend camelCase
 function mapDbTicketToFrontend(t: any): any {
   if (!t) return null;
+  const uid = t.created_by || t.createdBy || "";
+  const fallbackEmail = (t.created_by_name && t.created_by_name.includes("@")) ? t.created_by_name : ((t.caller && t.caller.includes("@")) ? t.caller : "");
   return {
     id: String(t.id || t.ticket_number || ""),
     number: t.ticket_number || t.number || "",
     caller: t.caller || "",
     category: t.category || "",
     incidentCategory: t.incident_category || t.incidentCategory || "",
+    incident_category: t.incident_category || t.incidentCategory || "",
     subcategory: t.subcategory || "",
     service: t.service || "",
     serviceOffering: t.service_offering || t.serviceOffering || "",
@@ -97,30 +140,57 @@ function mapDbTicketToFrontend(t: any): any {
     urgency: t.urgency || "3 - Low",
     channel: t.channel || "Self-service",
     assignmentGroup: t.assignment_group || t.assignmentGroup || "",
+    assignment_group: t.assignment_group || t.assignmentGroup || "",
     assignedTo: t.assigned_to || t.assignedTo || "",
+    assigned_to: t.assigned_to || t.assignedTo || "",
     assignedToName: t.assigned_to_name || t.assignedToName || "",
-    createdBy: t.created_by || t.createdBy || "",
-    createdByName: t.created_by_name || t.createdByName || "",
+    assigned_to_name: t.assigned_to_name || t.assignedToName || "",
+    createdBy: uid,
+    created_by: uid,
+    createdByName: t.created_by_name || t.createdByName || userNameMap.get(uid) || t.caller || "System",
+    created_by_name: t.created_by_name || t.createdByName || userNameMap.get(uid) || t.caller || "System",
+    createdByEmail: userEmailMap.get(uid) || fallbackEmail || "",
+    created_by_email: userEmailMap.get(uid) || fallbackEmail || "",
     resolvedBy: t.resolved_by || t.resolvedBy || "",
+    resolved_by: t.resolved_by || t.resolvedBy || "",
     resolvedByName: t.resolved_by_name || t.resolvedByName || "",
+    resolved_by_name: t.resolved_by_name || t.resolvedByName || "",
     resolvedAt: t.resolved_at || t.resolvedAt || null,
+    resolved_at: t.resolved_at || t.resolvedAt || null,
     closedBy: t.closed_by || t.closedBy || "",
+    closed_by: t.closed_by || t.closedBy || "",
     closedByName: t.closed_by_name || t.closedByName || "",
+    closed_by_name: t.closed_by_name || t.closedByName || "",
     closedAt: t.closed_at || t.closedAt || null,
+    closed_at: t.closed_at || t.closedAt || null,
     responseDeadline: t.response_deadline || t.responseDeadline || null,
+    response_deadline: t.response_deadline || t.responseDeadline || null,
     resolutionDeadline: t.resolution_deadline || t.resolutionDeadline || null,
+    resolution_deadline: t.resolution_deadline || t.resolutionDeadline || null,
     responseSlaStatus: t.response_sla_status || t.responseSlaStatus || "Pending",
+    response_sla_status: t.response_sla_status || t.responseSlaStatus || "Pending",
     resolutionSlaStatus: t.resolution_sla_status || t.resolutionSlaStatus || "Pending",
+    resolution_sla_status: t.resolution_sla_status || t.resolutionSlaStatus || "Pending",
     responseSlaStartTime: t.response_sla_start_time || t.responseSlaStartTime || null,
+    response_sla_start_time: t.response_sla_start_time || t.responseSlaStartTime || null,
     resolutionSlaStartTime: t.resolution_sla_start_time || t.resolutionSlaStartTime || null,
+    resolution_sla_start_time: t.resolution_sla_start_time || t.resolutionSlaStartTime || null,
     firstResponseAt: t.first_response_at || t.firstResponseAt || null,
+    first_response_at: t.first_response_at || t.firstResponseAt || null,
     totalPausedTime: t.total_paused_time ?? t.totalPausedTime ?? 0,
+    total_paused_time: t.total_paused_time ?? t.totalPausedTime ?? 0,
     onHoldStart: t.on_hold_start || t.onHoldStart || null,
+    on_hold_start: t.on_hold_start || t.onHoldStart || null,
     points: t.points ?? 0,
     slaDelayMeta: parseSlaDelayMeta(t.sla_delay_meta_json || t.slaDelayMeta),
     slaDelayLogs: parseSlaDelayLogs(t.sla_delay_logs_json || t.slaDelayLogs),
+    slaPolicy: t.sla_policy || t.slaPolicy || "Default SLA",
+    sla_policy: t.sla_policy || t.slaPolicy || "Default SLA",
+    sla_name: t.sla_name || t.slaName || t.slaPolicy || "Default SLA",
     createdAt: t.created_at || t.createdAt || null,
-    updatedAt: t.updated_at || t.updatedAt || null,
+    created_at: t.created_at || t.createdAt || null,
+    updatedAt: t.updated_at || t.updatedAt || t.created_at || t.createdAt || null,
+    updated_at: t.updated_at || t.updatedAt || t.created_at || t.createdAt || null,
   };
 }
 
@@ -143,19 +213,34 @@ async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
     let result: any[] = [];
 
     if (path.startsWith("tickets")) {
-      // Check if resolved query
-      let isResolvedQuery = false;
+      prefetchUsers().catch(() => {});
+      
+      let isOnlyOpenQuery = false;
+      let isOnlyResolvedQuery = false;
       if (queryObj && queryObj.clauses) {
         const whereClause = queryObj.clauses.find((c: any) => c.type === "where" && c.field === "status");
         if (whereClause) {
           const val = whereClause.value;
-          if (val === "Resolved" || val === "Closed" || (Array.isArray(val) && (val.includes("Resolved") || val.includes("Closed")))) {
-            isResolvedQuery = true;
+          const openStatuses = ["New", "Open", "In Progress", "Pending", "Pending Approval", "On Hold", "Waiting for Customer", "Awaiting User", "Awaiting Vendor"];
+          const resolvedStatuses = ["Resolved", "Closed", "Canceled"];
+          
+          if (Array.isArray(val)) {
+            isOnlyOpenQuery = val.every(v => openStatuses.includes(v));
+            isOnlyResolvedQuery = val.every(v => resolvedStatuses.includes(v));
+          } else {
+            isOnlyOpenQuery = openStatuses.includes(val);
+            isOnlyResolvedQuery = resolvedStatuses.includes(val);
           }
         }
       }
 
-      const url = isResolvedQuery ? "/api/tickets/resolved" : "/api/tickets/open";
+      let url = "/api/tickets/all";
+      if (isOnlyResolvedQuery) {
+        url = "/api/tickets/resolved";
+      } else if (isOnlyOpenQuery) {
+        url = "/api/tickets/open";
+      }
+      
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
       const dbTickets = await res.json();
@@ -164,15 +249,24 @@ async function fetchFallbackData(path: string, queryObj?: any): Promise<any[]> {
       const res = await fetch("/api/users");
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
       const dbUsers = await res.json();
-      result = dbUsers.map((u: any) => ({
-        id: u.uid || String(u.id),
-        uid: u.uid || String(u.id),
-        name: u.name || "",
-        email: u.email || "",
-        role: u.role || "user",
-        phone: u.phone || "",
-        passwordHash: u.password_hash || ""
-      }));
+      result = dbUsers.map((u: any) => {
+        const uid = u.uid || String(u.id);
+        const email = u.email || "";
+        const name = u.name || "";
+        if (uid) {
+          userEmailMap.set(uid, email);
+          userNameMap.set(uid, name);
+        }
+        return {
+          id: uid,
+          uid: uid,
+          name: name,
+          email: email,
+          role: u.role || "user",
+          phone: u.phone || "",
+          passwordHash: u.password_hash || ""
+        };
+      });
     } else if (path === "settings_groups") {
       const res = await fetch("/api/settings_groups");
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
@@ -499,6 +593,7 @@ export function onSnapshot(
 
 export async function addDoc(collectionRef: any, data: any): Promise<any> {
   if (firestoreExhausted || (collectionRef && collectionRef.type === "collection")) {
+    apiCache.clear();
     const path = collectionRef.path;
     console.log(`[Firestore Fallback] addDoc to "${path}":`, data);
 
@@ -537,6 +632,7 @@ export async function addDoc(collectionRef: any, data: any): Promise<any> {
 
 export async function updateDoc(docRef: any, data: any): Promise<void> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
+    apiCache.clear();
     let path = docRef.path;
     let id = docRef.id;
     if (path && path.includes("/")) {
@@ -587,6 +683,7 @@ export async function updateDoc(docRef: any, data: any): Promise<void> {
 
 export async function setDoc(docRef: any, data: any, options?: any): Promise<void> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
+    apiCache.clear();
     let path = docRef.path;
     let id = docRef.id;
     if (path && path.includes("/")) {
@@ -642,6 +739,7 @@ export async function setDoc(docRef: any, data: any, options?: any): Promise<voi
 
 export async function deleteDoc(docRef: any): Promise<void> {
   if (firestoreExhausted || (docRef && docRef.type === "document")) {
+    apiCache.clear();
     let path = docRef.path;
     let id = docRef.id;
     if (path && path.includes("/")) {

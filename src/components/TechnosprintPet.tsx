@@ -93,11 +93,19 @@ export function TechnosprintPet() {
   useEffect(() => {
     const savedX = localStorage.getItem("technosprint_pet_x");
     const savedY = localStorage.getItem("technosprint_pet_y");
+    
+    const defaultX = window.innerWidth > 200 ? window.innerWidth - 120 : 300;
+    const defaultY = window.innerHeight > 200 ? window.innerHeight - 150 : 500;
+    
     if (savedX && savedY) {
-      setPosition({ x: parseInt(savedX, 10), y: parseInt(savedY, 10) });
+      const parsedX = parseInt(savedX, 10);
+      const parsedY = parseInt(savedY, 10);
+      // Keep it within screen bounds safely
+      const boundedX = Math.max(10, Math.min(window.innerWidth > 200 ? window.innerWidth - 120 : 300, parsedX));
+      const boundedY = Math.max(10, Math.min(window.innerHeight > 200 ? window.innerHeight - 150 : 500, parsedY));
+      setPosition({ x: boundedX, y: boundedY });
     } else {
-      // Default position: bottom right corner
-      setPosition({ x: window.innerWidth - 120, y: window.innerHeight - 150 });
+      setPosition({ x: defaultX, y: defaultY });
     }
   }, []);
 
@@ -131,7 +139,7 @@ export function TechnosprintPet() {
       setRecentActivity(sorted.slice(0, 3));
 
       // SMART NOTIFICATION ENGINE
-      if (isInitializedRef.current) {
+      if (isInitializedRef.current && typeof snapshot.docChanges === "function") {
         snapshot.docChanges().forEach((change) => {
           const ticket = { id: change.doc.id, ...change.doc.data() } as TicketData;
           

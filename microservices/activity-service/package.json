@@ -1,0 +1,30 @@
+{
+  "name": "ticklora-activity-service",
+  "version": "1.0.0",
+  "description": "Activity tracking — AI tracker, screenshots, work sessions, work notes",
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx --watch src/index.ts",
+    "start": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "multer": "2.1.1",
+    "mysql2": "^3.22.3",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/morgan": "^1.9.9",
+    "@types/multer": "2.1.0",
+    "@types/node": "^22.14.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}
